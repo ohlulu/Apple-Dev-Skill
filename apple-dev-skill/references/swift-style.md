@@ -56,6 +56,12 @@ Default to `let` and `struct`. Mutability requires justification.
 When modification is needed, create a new value — don't mutate in place.
 Derive display data via computed properties; never store what you can compute.
 
+**Struct memberwise init trap:** `let` properties with default values are
+*excluded* from the synthesized memberwise init — the default becomes a
+compile-time constant that callers cannot override. Use `var` with a default
+when a property should be optional at the call site but immutable in spirit.
+Class properties are unaffected (no synthesized memberwise init).
+
 ### Let the Type System Enforce Correctness
 - **Eliminate illegal states** — If two fields can contradict each other,
   the model is wrong. Use enums with associated values instead of boolean +
