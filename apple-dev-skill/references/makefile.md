@@ -66,8 +66,15 @@ warnings:
 	  -scheme $(SCHEME) \
 	  -destination '$(SIM)' \
 	  -derivedDataPath "$(XCODE_DD)" \
+	  -skipMacroValidation \
 	  -configuration Debug \
-	  > $(LOGDIR)/warnings.log 2>&1 || true; \
+	  > $(LOGDIR)/warnings.log 2>&1; \
+	BUILD_EXIT=$$?; \
+	if [ $$BUILD_EXIT -ne 0 ] || grep -q 'BUILD FAILED' $(LOGDIR)/warnings.log; then \
+	  echo ""; \
+	  echo "❌  BUILD FAILED — full log → $(LOGDIR)/warnings.log"; \
+	  exit 1; \
+	fi; \
 	grep 'warning:' $(LOGDIR)/warnings.log \
 	  | grep -v 'appintentsmetadata\|libtool' \
 	  | sort -u; \
@@ -78,6 +85,46 @@ warnings:
 ```
 
 Clean build is essential — incremental builds cache stale diagnostics and may report 0 warnings even when issues exist. Adjust the `grep -v` noise filter for your project's specific non-actionable warnings.
+
+**Trap — always detect BUILD FAILED explicitly**. The naive form ends the xcodebuild line with `|| true` so the rest of the recipe still runs. When the build crashes mid-way (Swift compiler error, missing scheme, locked DerivedData) the log contains no `warning:` lines, and the target prints a triumphant `✅  0 warning(s)`. Always check `$?` *and* grep for `BUILD FAILED` before counting — either signal alone can miss a real failure.
+
+## Clean & Destructive Ops
+
+Never `rm -rf $(VAR)` in a Makefile. A misspelled or empty variable turns `rm -rf $(DD)` into `rm -rf` (current directory contents on some shells) or worse, `rm -rf /` if a path is mis-joined. The blast radius is asymmetric: you save zero seconds when it works, lose everything when it doesn't.
+
+Use `trash` (recoverable) and guard each path:
+
+```makefile
+## Remove DerivedData, Tuist cache, and test logs
+clean:
+	@[ -d "$(DD)" ] && trash "$(DD)" && echo "  trashed $(DD)" || true
+	@[ -d "$(LOGDIR)" ] && trash "$(LOGDIR)" && echo "  trashed $(LOGDIR)" || true
+	@tuist clean 2>/dev/null || true
+	@echo "✅  clean."
+```
+
+Why this shape:
+- `[ -d "$(DD)" ]` — only delete when the path exists *and* is a directory; protects against empty variables.
+- Quoted `"$(DD)"` — spaces in paths don't split into stray arguments.
+- `trash` instead of `rm -rf` — mistakes go to Finder Trash, not the void. Install with `brew install trash`.
+- `tuist clean 2>/dev/null || true` — don't fail the whole target when Tuist isn't installed or has nothing to clean.
+
+## Tuist Companion Targets
+
+When `tuist generate` is part of the workflow, two small targets pay for themselves:
+
+```makefile
+## Resolve and fetch SPM dependencies
+install:
+	tuist install
+
+## Regenerate workspace and open in Xcode
+open: generate
+	@open $(WORKSPACE)
+```
+
+- `install` — explicit SPM resolve step. Newcomers run `make install` after clone; CI runs it before generating.
+- `open` — single command that regenerates and opens the workspace in Xcode, so an agent can leave the IDE warm for the developer after a structural change.
 
 ## Adaptation Checklist
 

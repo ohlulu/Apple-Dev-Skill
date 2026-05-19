@@ -64,6 +64,7 @@ LOGDIR := $(REPO_ROOT)/.test-logs
 # $(5) derivedData override (default: DD)
 define xc
 	@mkdir -p $(LOGDIR); \
+	echo "⏳ xcodebuild $(or $(4),test) …"; \
 	cd $(2) && xcodebuild \
 	  $(3) \
 	  -derivedDataPath "$(or $(5),$(DD))" \
@@ -72,10 +73,10 @@ define xc
 	  $(or $(4),test) \
 	  > $(LOGDIR)/$(1).log 2>&1; \
 	RESULT=$$?; \
-	grep -E "(✘|✔ Test run|TEST SUCCEEDED|TEST FAILED)" $(LOGDIR)/$(1).log || true; \
+	grep -E "(✘|✔ Test run|TEST SUCCEEDED|TEST FAILED|BUILD SUCCEEDED|BUILD FAILED)" $(LOGDIR)/$(1).log || true; \
 	if [ $$RESULT -ne 0 ]; then \
 	  echo ""; \
-	  echo "  ❌ full log: $(LOGDIR)/$(1).log"; \
+	  echo "  ❌ full log → $(LOGDIR)/$(1).log"; \
 	fi; \
 	exit $$RESULT
 endef
@@ -121,8 +122,12 @@ CLOSE_XCODE_WINDOW := osascript \
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
-# Project generation (Tuist)
+# Tuist
 # ---------------------------------------------------------------------------
+
+## Resolve and fetch SPM dependencies
+install:
+	tuist install
 
 ## Close Xcode and regenerate project
 generate:
@@ -130,6 +135,11 @@ generate:
 	tuist generate
 #	@rm -f $(UNWANTED_SCHEMES)
 #	@echo "Removed unwanted workspace schemes."
+
+## Regenerate workspace and open in Xcode
+# Adapt the path to your actual workspace/project file.
+open: generate
+	@open MyApp.xcworkspace
 
 # ---------------------------------------------------------------------------
 # Test
@@ -205,10 +215,14 @@ tag:
 # Housekeeping
 # ---------------------------------------------------------------------------
 
-## Remove build artifacts
+## Remove DerivedData, Tuist cache, and test logs
+# Uses `trash` (brew install trash) so mistakes are recoverable.
+# Each path is guarded with `[ -d ]` to protect against empty variables.
 clean:
-	@rm -rf $(DD) $(LOGDIR)
-	@echo "✅  Cleaned derivedData and test logs."
+	@[ -d "$(DD)" ] && trash "$(DD)" && echo "  trashed $(DD)" || true
+	@[ -d "$(LOGDIR)" ] && trash "$(LOGDIR)" && echo "  trashed $(LOGDIR)" || true
+	@tuist clean 2>/dev/null || true
+	@echo "✅  clean."
 
 # ---------------------------------------------------------------------------
 # Help
@@ -219,7 +233,7 @@ help:
 	@awk '/^##/{if(!d){sub(/^## ?/,"");d=$$0};next} /^[a-zA-Z_-]+:/{if(d){printf "  \033[36m%-16s\033[0m %s\n",$$1,d};d=""} !/^##/{d=""}' $(MAKEFILE_LIST)
 
 
-.PHONY: help generate \
+.PHONY: help install generate open \
         test test-xcode test-all \
         bump bump-build \
         preflight validate release submit tag \
