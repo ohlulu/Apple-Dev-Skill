@@ -187,6 +187,40 @@ Verify this flow:
 - test scene/window setup with a real `UIWindow` when possible
 - assert key-and-visible behavior and root controller composition
 
+## Async XCTestCase + Long-Lived Tasks (Xcode 26+)
+
+Xcode 26 / Swift 6 strict concurrency aborts the test bundle in
+`_swift_task_dealloc_specific` (SIGABRT) when an `async throws` test
+method returns while any unstructured `Task` it spawned — directly or
+transitively — still owns task-allocator pages.
+
+Common trigger: a test builds a live VC through the real composer,
+calls `simulateAppearance()`, and the view model spins up long-lived
+observation `Task`s (GRDB change detection, paginated fetch,
+notification listeners). The test asserts and returns; the Tasks have
+not finished.
+
+`addTeardownBlock` does not save you — teardown runs *after* the task
+allocator's dealloc check.
+
+**Fix:**
+- Prefer `func test() throws` (synchronous) and drive async work with
+  `XCTestExpectation` + `fulfill()` from the completion edge.
+- If the test must be `async`, ensure every Task it spawned completes
+  before the method returns: `await task.value` on each, or stop the
+  observer synchronously before the last `await`.
+- Cancel-and-forget is not enough — the Task must *finish*, not just be
+  cancelled, for the allocator pages to be released in time.
+
+**Crash signature:**
+```
+swift::_swift_task_dealloc_specific
+static XCTSwiftErrorObservation._observeErrors(in:)
+```
+
+**Log signature:** test N reports `started`, the next line is test N+1
+`started` (no `passed`/`failed` in between), then the bundle aborts.
+
 ## Warning Signs
 
 The test strategy is drifting when:

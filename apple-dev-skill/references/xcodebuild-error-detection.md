@@ -30,3 +30,41 @@ All `xc-*.sh` scripts (`xc-build.sh`, `xc-build-run.sh`, `xc-test.sh`) must shar
 
 - `CODE_SIGNING_ALLOWED=NO` — prevents signing errors from masking real build failures in CI and local scripts
 - Consistent `XC_CONFIG` — all scripts should source the same `xc-env.sh` for scheme, destination, and configuration
+
+## xcodebuild test: Crash Detection
+
+`xcodebuild test` returns exit 0 with `** TEST SUCCEEDED **` on a
+green run and exit non-zero with `** TEST FAILED **` on a failed run —
+but **a SIGABRT / EXC_BAD_ACCESS inside the test bundle reports the
+same way as an assertion failure**. Grepping only for `error:` or
+`failed` will surface assertion misses and **miss every actual crash**.
+
+Required pattern when verifying a test run:
+
+```bash
+xcodebuild test ... 2>&1 | tee /tmp/xc-test.log
+EXIT=${PIPESTATUS[0]}
+
+# Crashes — the signal that something exploded inside the bundle
+grep -E "Restarting after unexpected exit|crashed|SIGABRT|EXC_BAD_ACCESS" /tmp/xc-test.log
+
+# Plus the usual sanity checks
+grep -E "\*\* TEST (SUCCEEDED|FAILED)" /tmp/xc-test.log
+```
+
+A test run is only green when **all three** hold:
+- exit code is 0
+- log contains `** TEST SUCCEEDED **`
+- log contains **no** crash marker
+
+**Subtle log-only signature of a crash:** test N prints
+`Test Case 'X' started.`, immediately followed by
+`Test Case 'Y' started.` with no `passed (Xs)` or `failed (Xs)`
+for X in between. That gap is X crashing inside its method body
+and the runner moving on without writing a result line. Subsequent
+tests may still report `passed` before the bundle finally aborts —
+do not trust them.
+
+When in doubt, redirect to a file (`tee /tmp/xc-test.log`) before
+grepping. xcodebuild output is voluminous and gets truncated in
+terminal multiplexers, so partial logs hide the very lines you need.
