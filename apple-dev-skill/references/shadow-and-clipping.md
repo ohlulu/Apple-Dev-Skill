@@ -127,6 +127,69 @@ When Auto Layout sets this view's frame, its `layoutSubviews` fires and the laye
 - **Frame-dependent properties** (frame, path, shadowPath): set in the **owning view's** `layoutSubviews`.
 - **Never reach down** from a parent's `layoutSubviews` to read a child's bounds for layer sizing.
 
+## UILabel `backgroundColor` Is Not Clipped by `cornerRadius`
+
+`UIView.backgroundColor` is normally rendered through `layer.backgroundColor`, which Core Animation clips to `cornerRadius` automatically. **`UILabel` is the exception.** When you set `backgroundColor` on a UILabel, the colour is painted into the layer's **contents bitmap** (alongside the text glyphs), not assigned to `layer.backgroundColor`. Core Animation only clips contents when `masksToBounds = true`.
+
+Result: a UILabel with `layer.cornerRadius > 0` and `masksToBounds = false` (the configuration you need for a soft shadow) renders the fill as a **sharp rectangle**, no matter what corner radius you set.
+
+### Symptom
+
+A pill / badge / chip built as a UILabel with `backgroundColor` + `cornerRadius` + soft shadow — shape is square, shadow is square, cornerRadius appears to have no effect at all.
+
+```swift
+// ❌ Looks like a sharp rectangle, never rounds
+let badge = UILabel()
+badge.text = "1"
+badge.backgroundColor = .systemBlue       // painted into contents
+badge.layer.cornerRadius = 10              // does not clip contents
+badge.layer.masksToBounds = false          // required for shadow
+badge.layer.shadowOpacity = 0.15
+```
+
+Enabling `masksToBounds = true` would clip the fill rounded, but would also clip the shadow away. Neither combination gives "rounded fill + soft shadow" on a UILabel.
+
+### Fix: wrap the label in a plain `UIView` container
+
+Plain `UIView` honours `layer.backgroundColor`, which **is** clipped by `cornerRadius` without `masksToBounds = true`. Put the shape and shadow on the container, let the label render only the text.
+
+```swift
+// ✅ Container owns shape + shadow; label is text only
+private final class QtyBadgeView: UIView {
+    private let label = UILabel()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .systemBlue           // via layer.backgroundColor → clipped by cornerRadius
+        layer.cornerRadius = 10
+        layer.masksToBounds = false             // shadow can extend outside
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = 0.15
+        layer.shadowOffset = CGSize(width: 0, height: 1)
+        layer.shadowRadius = 2
+
+        label.textColor = .white
+        label.textAlignment = .center
+        label.backgroundColor = .clear          // never give the label its own fill
+        addSubview(label)
+        // pin label edges with padding constraints
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let radius = bounds.height / 2          // perfect capsule at any width
+        layer.cornerRadius = radius
+        layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: radius).cgPath
+    }
+}
+```
+
+### Rule of thumb
+
+- **Need a coloured fill with `cornerRadius`?** Use a plain `UIView` container. Never paint the fill via `UILabel.backgroundColor`.
+- The same trap applies to any view whose `-drawRect:` paints its own background: custom `UIView` subclasses that fill themselves in `draw(_:)`, some `UIControl` subclasses, and any view rendering through `drawsAsynchronously`.
+- For pills, badges, chips, status tags — default to `UIView` container + inner UILabel from day one. Don't try to make UILabel both the shape and the text.
+
 ## Sheet Presentation: Double-Background Color Shift (iOS 26+)
 
 When a view controller is presented as a sheet (`.automatic` / `.pageSheet`), iOS 26 inserts a `UIDropShadowView` with rounded corners and material compositing between the presenting and presented view controllers.
@@ -183,3 +246,4 @@ private func applyTheme() {
 | Shadow flickers during scroll | Shadow is recalculated per frame — set `shadowPath` for performance |
 | Gradient/shape layer invisible on first display, appears after navigate-back | Layer frame set from a parent's `layoutSubviews` reading a deep child's bounds (still zero). Move layer to a subclass that manages it in its own `layoutSubviews` |
 | Subtle color seam between search bar area and scroll content (iOS 26 sheet) | Scroll view has same opaque backgroundColor as root view — set scroll view to `.clear` |
+| UILabel pill renders as a sharp rectangle despite `cornerRadius` + `backgroundColor` | UILabel paints its background into the layer's contents bitmap, which `cornerRadius` does not clip unless `masksToBounds = true` (and that would clip the shadow). Wrap the label in a plain UIView container that owns the shape |

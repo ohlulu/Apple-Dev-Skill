@@ -49,7 +49,7 @@ Consult the reference file for each topic relevant to the current task. Apply al
 | UIButton icon badge (small circular icon overlay, .custom type, icon as subview not setImage, highlight via touchDown/Up) | [uibutton-icon-badge](references/uibutton-icon-badge.md) |
 | View wrapping (wrapped(insets:), container padding, section decoration helpers, when to use vs manual wrapper) | [view-wrapping](references/view-wrapping.md) |
 | Content overflow detection (two-pass layout, actual vs estimated measurement, dynamic collapse/expand triggers) | [overflow-detection](references/overflow-detection.md) |
-| Shadow and clipping (CALayer shadow visibility, contentView.clipsToBounds default, ancestor chain check, deferred visual initialization, iOS 26 sheet double-background color shift) | [shadow-and-clipping](references/shadow-and-clipping.md) |
+| Shadow and clipping (CALayer shadow visibility, contentView.clipsToBounds default, ancestor chain check, deferred visual initialization, UILabel backgroundColor not clipped by cornerRadius, iOS 26 sheet double-background color shift) | [shadow-and-clipping](references/shadow-and-clipping.md) |
 | Keyboard avoidance (scroll view inset adjustment, keyboardWillChangeFrame, animation sync, inputView handling, first responder scrolling) | [keyboard-avoidance](references/keyboard-avoidance.md) |
 | Menu vs popover (UIMenu for flat option selection, UIPopover for custom UI, decision rule, sizing pitfalls, migration guide) | [menu-vs-popover](references/menu-vs-popover.md) |
 | Popover tooltip (UIPopoverPresentationController safe-area centering trap, iPhone adaptation, preferredContentSize calculation, arrow direction, tap target sizing, dismiss behavior) | [popover-tooltip](references/popover-tooltip.md) |
