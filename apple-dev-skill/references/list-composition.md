@@ -563,3 +563,33 @@ The pattern is too heavy when:
 - protocols expand just to satisfy a few advanced sections
 - trivial screens require jumping through many layers to debug basic behavior
 - the container still contains a large `switch indexPath`
+
+## UITableView Gotchas
+
+### `sectionHeaderTopPadding` adds ~22pt above every sticky header (iOS 15+)
+
+For `.plain` style tables, `UITableView.sectionHeaderTopPadding` defaults to `automaticDimension`, which inserts ~22pt of empty space **above** each section header. The header still sticks correctly — but as the user scrolls, rows pass *through* that empty band before reaching the header, reading as content bleeding above the sticky header.
+
+**Symptom**: rows visibly slide above the sticky section header before disappearing behind it, even though the header has an opaque background.
+
+**Fix**:
+
+```swift
+table.sectionHeaderTopPadding = 0
+```
+
+Leave the padding only if the design explicitly wants visual breathing room between sections (the system default is sized for grouped-style spacing aesthetics). For dense lists with cell-internal margins, zero is almost always correct.
+
+### Sticky headers need opaque backgrounds
+
+A sticky `.plain` section header floats over scrolling content. Any alpha < 1.0 lets row text show through; CSS `backdrop-filter` doesn't have a UIKit equivalent unless you put a `UIVisualEffectView` behind the header. For a clean sticky header, use a fully opaque solid background or a `UIVisualEffectView(effect: .systemThinMaterial)` wrapper — not `withAlphaComponent(0.95)`.
+
+### Sticky header bleed is layered
+
+When content appears visibly above a section header in a `.plain` table, the cause is usually one of three layers, in order of likelihood:
+
+1. **Section header itself is translucent** (alpha < 1) — fix the header background
+2. **`sectionHeaderTopPadding` gap above the header** — set to 0
+3. **The cell is rendering inside the nav bar's vertical extent**, visible through a transparent nav bar appearance — fix at the nav bar layer (see `navigation-bar-appearance.md §Split Appearance for Opaque Chrome on iOS 26`)
+
+Walk the layers from inside (header) outward (chrome). A fix at the wrong layer reduces the symptom without eliminating it; verify with the view debugger or `axe describe-ui` to confirm the actual cell frame vs. the table bounds before deciding which layer to touch.

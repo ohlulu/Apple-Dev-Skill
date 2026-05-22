@@ -51,6 +51,83 @@ The view controller's `view.backgroundColor` is already set to the theme color, 
 
 Apple DTS explicitly recommends moving away from `UINavigationBarAppearance.backgroundColor` on iOS 26 (Developer Forums thread/807331). The API is not deprecated, but its behavior is broken for large titles.
 
+## Split Appearance for Opaque Chrome on iOS 26
+
+The iOS 26 large-title cover bug ([FB20986869](#ios-26-breaking-change--backgroundcolor-covers-large-title)) only triggers in the **large-title state** (scroll edge, title expanded). Once the user scrolls and the title collapses to inline, an opaque background is safe.
+
+This lets you have *both* a clean transparent large title and an opaque chrome that stops content from bleeding visibly behind the nav bar when scrolled.
+
+### Pattern
+
+```swift
+let edgeAppearance = UINavigationBarAppearance()
+edgeAppearance.configureWithTransparentBackground()
+edgeAppearance.backgroundColor = nil
+edgeAppearance.shadowColor = .clear
+// … title attributes …
+
+let scrolledAppearance = UINavigationBarAppearance()
+scrolledAppearance.configureWithOpaqueBackground()
+scrolledAppearance.backgroundColor = theme.background
+scrolledAppearance.shadowColor = .clear  // optional: drop hairline
+// … same title attributes …
+
+bar.scrollEdgeAppearance = edgeAppearance     // large title visible
+bar.standardAppearance = scrolledAppearance   // title collapsed
+bar.compactAppearance = scrolledAppearance
+if #available(iOS 15.0, *) {
+  bar.compactScrollEdgeAppearance = edgeAppearance
+}
+```
+
+Apply the **same title attributes** to both appearances so the title font / colour doesn't flash during the transition.
+
+### Alternatives to opaque solid
+
+| Choice | Visual feel | Bleed protection |
+|--------|------------|------------------|
+| `configureWithOpaqueBackground` + solid colour | Flat, matches mockup-style designs | Complete |
+| `configureWithDefaultBackground` | iOS frosted material (Mail/Notes/Files feel) | Blurs but doesn't fully hide |
+| `configureWithTransparentBackground` | Flat, content shows through | None |
+
+### When This Pattern Applies
+
+- You want the body background to extend visually into the nav bar at the top of scroll (no chrome strip)
+- AND you don't want cells visibly scrolling under the nav bar mid-scroll
+- AND you need to preserve the iOS 26 large title
+
+If any of these doesn't apply, use a single appearance (transparent OR opaque OR frosted) across all slots.
+
+## Embedded UISearchBar Has Independent Background
+
+A `UISearchBar` placed via `navigationItem.searchController` is not a child of the navigation bar's appearance pipeline. It lives in its own strip below the title area and renders its background via `searchBar.backgroundImage`, **completely ignoring `UINavigationBarAppearance.backgroundColor`**.
+
+### Symptom
+
+Nav bar background is set to opaque (or frosted), but cell content visibly scrolls *under the search bar* with the search bar's default translucent material. The chrome above and below the search bar is fine; only the search bar's own strip leaks.
+
+### Fix
+
+```swift
+let opaqueFill = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { ctx in
+  theme.background.setFill()
+  ctx.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
+}
+searchController.searchBar.backgroundImage = opaqueFill
+```
+
+A 1×1 solid image is stretched to cover the entire search bar strip, blocking content below it.
+
+### Caveat
+
+This is **not always sufficient** — some configurations (notably `searchBarStyle = .default` with certain navigation controllers) still layer a translucent overlay on top of `backgroundImage`. If bleed persists after setting `backgroundImage`, try:
+
+1. `searchController.searchBar.searchBarStyle = .minimal` then add an opaque ancestor view
+2. Inspect view hierarchy in the debugger; the search bar may have `_UIBarBackground` subviews that need separate styling
+3. As last resort, host the search field outside the nav bar entirely (custom toolbar)
+
+This area of UIKit is under-documented and behaviour shifts between iOS versions; expect iteration.
+
 ## Three Appearance Slots
 
 | Property | When active |
@@ -98,3 +175,5 @@ scrollView.topAnchor.constraint(equalTo: view.topAnchor)  // NOT safeArea
 | Creating new appearance objects in `viewWillAppear` without guarding | Replaces appearance mid-transition on push/pop, can cause flicker |
 | Using `UINavigationBar.appearance()` globally + per-instance overrides | Global proxy wins on first layout, then per-instance takes over — ordering is unpredictable |
 | UIScrollView without `alwaysBounceVertical` | Large title stuck — no scroll events when content fits in viewport |
+| Setting only `UINavigationBarAppearance.backgroundColor` opaque when an embedded `UISearchBar` is present | Search bar strip stays translucent; cells bleed through it. Set `searchBar.backgroundImage` separately. |
+| Setting all three slots to the same transparent appearance, then wondering why cells are visible behind the nav bar during scroll | iOS scroll views extend under the nav bar by design. Opaque (or frosted) `standardAppearance` is what hides them. |
