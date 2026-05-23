@@ -51,6 +51,80 @@ iOS automatically inset `safeAreaLayoutGuide` past the master overlay. No manual
 | Make the master view opaque to hide bleed-through | Doesn't address the layout issue — content still clips at the safe-area edge once the user resizes the window. |
 | Bootstrap secondary from the master's `viewDidLoad` via a callback | Fires after the split commits its initial layout decision. Mount the secondary in the composer instead. |
 
+## Push Transitions Inside Secondary Nav Slide Across Full Width
+
+The safe-area pinning fix solves static layout. It does **not** solve push transitions inside a `UINavigationController` placed as the secondary VC.
+
+### Symptom
+
+- Tapping a row in the secondary detail pushes a new VC
+- The new VC slides in from the right edge of the **screen** (not the right edge of the visible secondary pane)
+- Mid-transition, the new VC visually "slides under the primary master" and **lands at x=0** — hidden under the master overlay
+- Settled state looks fine because individual VCs are pinned to safe area, but the animation reveals the underlying full-width frame
+
+### Root Cause
+
+`UINavigationController`'s push animator translates the incoming/outgoing VC views by the **navigation controller's own bounds**. The secondary's nav controller has `view.bounds = full split width`, so the animator slides views across the entire screen. Safe-area pinning constrains the child VCs' content but does not change the nav controller's own frame, so the animator is unaffected.
+
+You cannot intercept this with `preferredSplitBehavior`, `safeAreaInsets`, `additionalSafeAreaInsets`, or any UISplitView property. The fix has to be **structural** — make the nav controller's own view smaller.
+
+### Fix — Host VC Wrapper
+
+Wrap the navigation controller as a **child of a plain host VC** and pin the nav's view to the host's `safeAreaLayoutGuide.leadingAnchor`. The host fills the full secondary; the inner nav's frame collapses to the visible right pane. Push transitions then animate within that inner frame.
+
+```swift
+private final class SecondaryColumnHost: UIViewController {
+  private let content: UIViewController  // typically a UINavigationController
+
+  init(content: UIViewController) {
+    self.content = content
+    super.init(nibName: nil, bundle: nil)
+  }
+
+  @available(*, unavailable)
+  required init?(coder _: NSCoder) { fatalError() }
+
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    // Match the page background so any uncovered strip (status-bar
+    // band when the inner nav bar is hidden) reads as the page
+    // surface, not systemBackground white.
+    view.backgroundColor = Color.neutral50
+
+    addChild(content)
+    content.view.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(content.view)
+    NSLayoutConstraint.activate([
+      content.view.topAnchor.constraint(equalTo: view.topAnchor),
+      content.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+      // Leading pins to safe area — excludes the master overlay region.
+      content.view.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+      content.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+    ])
+    content.didMove(toParent: self)
+  }
+}
+
+// Composer
+let secondaryNav = UINavigationController(rootViewController: detailRoot)
+let secondaryHost = SecondaryColumnHost(content: secondaryNav)
+split.setViewController(secondaryHost, for: .secondary)
+// Push as normal — transition stays inside the visible pane:
+secondaryNav.pushViewController(orderDetailVC, animated: true)
+```
+
+### When You Need the Wrapper vs Just Safe-Area Pinning
+
+| Secondary uses | Safe-area pinning alone | Host wrapper needed |
+|----------------|-------------------------|---------------------|
+| Single VC, swapped via `split.setViewController(_, for: .secondary)` | ✅ Sufficient | Not needed |
+| `UINavigationController` with **only setViewControllers swaps** (no animated push) | ✅ Sufficient | Not needed |
+| `UINavigationController` with **animated `pushViewController`** | ❌ Animation leaks across master | ✅ Required |
+
+### Why the Host bg Must Match the Page bg
+
+The host's default `view.backgroundColor` is `systemBackground` (white in light mode). When the inner nav bar is hidden (e.g. dashboard-style detail pages), the strip under the status bar isn't always fully painted by the inner content, and the host's white bleeds through as a band across the top of the secondary pane. Always tint the host to match the detail page's bg token (typically `neutral-50`).
+
 ## Diagnostic
 
 When you suspect overlay clipping, dump the accessibility frame of detail content and look for **width values that span the whole screen**:
@@ -63,4 +137,5 @@ If a card or scroll view inside the detail reports `width: 949` (or whatever ≈
 
 ## Reference Implementations
 
-In this codebase, `CustomerDetailViewController` and `TransactionDetailViewController` are the canonical examples. Copy their scroll-view anchoring pattern (`safeAreaLayoutGuide` for leading/trailing) when building any new detail VC that sits in a `UISplitViewController` secondary column.
+- **Static safe-area pinning**: `CustomerDetailViewController` / `OrderDetailViewController` `setupScroll()` — pin the scroll view to `safeAreaLayoutGuide` for leading/trailing. Copy this for any new detail VC.
+- **Push-transition host wrapper**: `CustomerComposer.SecondaryColumnHost` — wrap the secondary nav whenever the detail flow uses animated `pushViewController` inside the secondary column.
