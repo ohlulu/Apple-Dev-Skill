@@ -1,21 +1,22 @@
 ---
 name: apple-dev-skill
 description: >-
-  Apple platform development: UIKit patterns, SwiftUI bridging, Xcode/Tuist
-  project setup, xcconfig, build phases, Makefile, and Swift coding conventions
-  for app development. Load whenever working in an Apple app codebase — building
-  features, fixing bugs, debugging layout or build issues, implementing designs,
-  adjusting animations, writing tests, setting up project structure, or reviewing
-  Swift code in an app context. Also load for objc_setAssociatedObject, UIViewRepresentable
-  bridging, iCloud ubiquity containers, Tuist project generation, xcconfig hierarchy,
-  or build phase scripts.
-  NOT for: server-side Swift (Vapor), Linux Swift, CLI tools, or platform-agnostic
-  SPM libraries — those rely on global rules.
-  Trigger words: "UIKit", "UIViewController", "UIView", "UITableView",
-  "UICollectionView", "Auto Layout", "Xcode", "xcconfig", "build phase",
-  "Tuist", "Makefile", "SwiftUI bridge", "UIViewRepresentable",
-  "Swift style", "type design", "protocol", "error handling",
-  "專案設定", "建置設定", "建置腳本", "iOS", "app development".
+  Use when working in any iOS / iPadOS / macOS app project — load on
+  Turn 1 if cwd is an Xcode/Tuist project or has .swift files in an
+  app target. Load even when the prompt is plain-language design /
+  UX talk ("this page", "the push feels wrong", "background should
+  be grey") not naming Apple APIs — project type decides, not
+  phrasing. Covers UIKit, SwiftUI bridging, Xcode/Tuist setup,
+  xcconfig, build phases, Makefile, Swift conventions.
+  NOT for server-side Swift, Linux Swift, CLI tools, or
+  platform-agnostic SPM libs.
+  Trigger words: UIKit, UIViewController, UISplitViewController,
+  UINavigationController, Auto Layout, UIViewRepresentable, Xcode,
+  xcconfig, Tuist, Makefile, Project.swift, push, transition, sheet,
+  popover, tab bar, navigation, keyboard, gesture, animation, layout,
+  iPad, iPhone, iOS, iPadOS, macOS app, 画面, 頁面, 按鈕, 卡片,
+  切換, 推, 返回, 底色, 佈局, 動畫, 導航, 工具列, 彈窗,
+  鍵盤, 手勢, 專案設定, 建置設定.
 ---
 
 # Apple Dev Skill
