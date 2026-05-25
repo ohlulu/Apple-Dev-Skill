@@ -74,6 +74,7 @@ Consult the reference file for each topic relevant to the current task. Apply al
 | Makefile template | [Makefile.template](references/Makefile.template) |
 | Tuist SPM integration (native vs XcodeProj-based, wrapper target problem, migration steps) | [tuist-spm-integration](references/tuist-spm-integration.md) |
 | xcodebuild error detection (dual failure detection, exit code + BUILD FAILED grep, CODE_SIGNING_ALLOWED=NO) | [xcodebuild-error-detection](references/xcodebuild-error-detection.md) |
+| CLI distribution signing (xcodebuild exportArchive cloud signing relies on Xcode Settings → Accounts OAuth session, not ASC API key; "Failed to find an account" / "Cloud signing permission error" both mean the same missing-account state; do NOT mint a local Apple Distribution cert as a workaround) | [cli-distribution-signing](references/cli-distribution-signing.md) |
 
 ### Swift Coding Style (App Context)
 
