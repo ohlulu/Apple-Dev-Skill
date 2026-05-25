@@ -77,6 +77,7 @@ For restoring backups with hundreds of files:
 | Sequential download (file-by-file, wait for each) | Prevents daemon from batching; total time = Σ per-file | Batch request all, poll collectively |
 | `try?` on all `startDownloadingUbiquitousItem` calls | Swallows container-unavailable / quota errors | Use `try`; fail fast if ALL requests fail |
 | Polling without checking `ubiquitousItemDownloadingErrorKey` | iCloud reports failure but app waits until timeout | Check error key each poll; abort if all remaining files have errors |
+| Treating `.downloaded` as restore-success | Silently restores a **stale** backup on cross-device restore — a newer version on iCloud was never fetched | Only accept `.current`; keep polling until daemon confirms latest version |
 
 ### URL Resource Keys for Download Status
 
@@ -90,8 +91,10 @@ let values = try url.resourceValues(forKeys: keys)
 ```
 
 - `.current` = fully downloaded and up-to-date
-- `.downloaded` = local copy exists but may be stale
+- `.downloaded` = local copy exists but **may be stale** — another device uploaded a newer version that hasn't synced yet
 - `.notDownloaded` = only a placeholder (`.filename.icloud`) exists locally
+
+**Restore-success rule**: only `.current` is safe to accept. Restoring on `.downloaded` is the classic cross-device data-loss bug — user backs up from phone A, restores on phone B which still has yesterday's local copy, app cheerfully overwrites with the older snapshot. Always poll until `.current`, or fail with a clear stall error.
 
 ### Evicted File Placeholders
 
