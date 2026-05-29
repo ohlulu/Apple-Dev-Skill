@@ -159,6 +159,8 @@ Expand is slower and playful (discovery). Collapse is faster and direct (dismiss
 
 Custom layout views (e.g. a flow/tag-cloud layout that positions subviews in `layoutSubviews`) do **not** get this for free. Four pitfalls arise:
 
+> For the related but distinct scenario of **swapping child VCs of different heights inside a fixed-position card** (wizard / multi-step transitions), see [step-transition-sizing.md](step-transition-sizing.md). Same precompute-then-animate philosophy; different decoupling problem (two pinned children competing for container height).
+
 ### Pitfall 1: `isHidden` Is Not Animatable
 
 `isHidden` takes effect immediately, even inside an animation block. For UIStackView, Apple intercepts this and converts it to a height animation. Custom views get no such magic — the layout change happens instantly.

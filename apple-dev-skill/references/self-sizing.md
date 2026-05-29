@@ -128,4 +128,5 @@ init() {
 | Table cell height | `automaticDimension` + complete constraint chain in `contentView` |
 | Collection cell height | `.estimated()` layout dimension + complete constraint chain |
 | Embedded child controller | `systemLayoutSizeFitting` on child's view → height constraint on container |
+| Wizard / multi-step card with size-changing children | See [step-transition-sizing.md](step-transition-sizing.md) — measurement + explicit container height + outgoing-child decoupling |
 | Any "how tall is this?" question | `systemLayoutSizeFitting` with fixed width, compressed height |
