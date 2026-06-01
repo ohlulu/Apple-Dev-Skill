@@ -77,6 +77,48 @@ preferredContentSize = CGSize(
 )
 ```
 
+### ⚠️ Use `label.sizeThatFits`, NOT `view.systemLayoutSizeFitting`
+
+It is tempting to measure the *container view* with
+`systemLayoutSizeFitting(_:withHorizontalFittingPriority:verticalFittingPriority:)`
+so the safe-area-anchored constraints "just do the math". Do not.
+
+Why it breaks: the view-level fit runs through your safe-area
+constraints, but at viewDidLoad time `safeAreaInsets` may be zero or
+stale. The returned height assumes a different chrome state than
+layout time, so once the popover actually renders — with real arrow
+insets — the content view is taller than the text needs and the
+surplus dumps onto one side of the bubble (usually the bottom),
+reproducing the *exact* asymmetry the safe-area pinning was meant to
+fix.
+
+Measure the label in isolation with a known target width
+(`maxWidth - hPad * 2`). This decouples sizing from chrome state and
+produces a bubble that hugs the text symmetrically regardless of
+arrow direction.
+
+```swift
+// ❌ View-level fit — text appears shifted, bubble has extra padding on one side
+let target = view.systemLayoutSizeFitting(
+    CGSize(width: maxWidth - hPad * 2, height: UIView.layoutFittingCompressedSize.height),
+    withHorizontalFittingPriority: .required,
+    verticalFittingPriority: .fittingSizeLevel
+)
+preferredContentSize = CGSize(
+    width: ceil(target.width) + hPad * 2,
+    height: ceil(target.height) + vPad * 2
+)
+
+// ✅ Label-level fit — symmetric padding on all four sides
+let textSize = label.sizeThatFits(
+    CGSize(width: maxWidth - hPad * 2, height: .greatestFiniteMagnitude)
+)
+preferredContentSize = CGSize(
+    width: min(ceil(textSize.width) + hPad * 2, maxWidth),
+    height: ceil(textSize.height) + vPad * 2
+)
+```
+
 ## Arrow Direction
 
 | Setting | Behavior |
@@ -106,7 +148,7 @@ with `adaptivePresentationStyle` returning `.none`.
 
 - [ ] Content pinned to `safeAreaLayoutGuide` (not `view`)
 - [ ] `adaptivePresentationStyle` returns `.none` for iPhone popover
-- [ ] `preferredContentSize` calculated from actual text size + padding
+- [ ] `preferredContentSize` calculated via `label.sizeThatFits` (NOT `view.systemLayoutSizeFitting`)
 - [ ] Arrow direction `.any` (unless constrained by design)
 - [ ] Info button tap target ≥ 40×40pt
 - [ ] Delegate assigned before `present()`
