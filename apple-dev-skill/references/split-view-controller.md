@@ -121,6 +121,81 @@ secondaryNav.pushViewController(orderDetailVC, animated: true)
 | `UINavigationController` with **only setViewControllers swaps** (no animated push) | ✅ Sufficient | Not needed |
 | `UINavigationController` with **animated `pushViewController`** | ❌ Animation leaks across master | ✅ Required |
 
+Note: "Sufficient" here means the master overlay clipping bug is
+solved. iOS 26 also adds an **implicit slide animation** to
+`setViewController(_:for:.secondary)` even without the wrapper — see
+the next section to disable it.
+
+## Detail Swap Implicit Animation on iOS 26
+
+### Symptom
+
+- Tapping a sidebar row swaps the secondary VC via
+  `split.setViewController(detail, for: .secondary)`
+- The new detail slides in from the **left edge** of the secondary
+  pane every single time, even though no `animated:` parameter was
+  passed (the API does not have one)
+- Reads as a page transition; visually noisy when the sidebar is a
+  Settings / Orders-style master where row picks should feel like
+  content updates
+
+### Root Cause
+
+iOS 26 added an implicit transition animation to the secondary swap
+path. Pre-26 this call was unanimated. The transition lives in
+UIKit's containment machinery and is **not** controlled by any
+public flag on `UISplitViewController` — no `animated:` overload, no
+`preferredSplitBehavior` knob, no delegate hook to opt out.
+
+### Fix
+
+Wrap the call in `UIView.performWithoutAnimation`. This disables
+both the UIKit animation block and the underlying CATransaction
+implicit actions for the duration, which is enough to suppress the
+slide:
+
+```swift
+UIView.performWithoutAnimation {
+  split.setViewController(detail, for: .secondary)
+}
+```
+
+For a project with multiple sidebar-driven detail panes, hoist a
+thin extension to keep call sites clean and the workaround
+documented in one place:
+
+```swift
+public extension UISplitViewController {
+  func setViewControllerWithoutAnimation(
+    _ viewController: UIViewController,
+    for column: UISplitViewController.Column
+  ) {
+    UIView.performWithoutAnimation {
+      setViewController(viewController, for: column)
+    }
+  }
+}
+```
+
+### When to Disable vs Keep
+
+| Sidebar UX intent | Animation | Use the wrapper? |
+|-------------------|-----------|------------------|
+| Sidebar row ≈ "change which content the pane is showing" (Settings, Orders) | Off | ✅ |
+| Sidebar row ≈ "navigate to a different screen" (Mail accounts switching) | On | Skip the wrapper |
+
+The canonical Settings / iPad master-detail metaphor is the former.
+The slide reads as a page transition the user didn't ask for.
+
+### What Doesn't Work
+
+- `split.setViewController(detail, for: .secondary, animated: false)` — no such overload
+- `preferredSplitBehavior = .tile` — ignored on iOS 26 in this respect
+- Calling on a background runloop or `DispatchQueue.main.async` — the
+  animation is scheduled inside the same runloop turn as the swap
+- Setting `UIView.setAnimationsEnabled(false)` globally — works but is
+  too blunt; can swallow legitimate animations from other call paths
+
 ### Why the Host bg Must Match the Page bg
 
 The host's default `view.backgroundColor` is `systemBackground` (white in light mode). When the inner nav bar is hidden (e.g. dashboard-style detail pages), the strip under the status bar isn't always fully painted by the inner content, and the host's white bleeds through as a band across the top of the secondary pane. Always tint the host to match the detail page's bg token (typically `neutral-50`).
