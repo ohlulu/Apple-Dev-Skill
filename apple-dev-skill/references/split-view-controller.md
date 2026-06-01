@@ -196,6 +196,47 @@ The slide reads as a page transition the user didn't ask for.
 - Setting `UIView.setAnimationsEnabled(false)` globally — works but is
   too blunt; can swallow legitimate animations from other call paths
 
+### Don't Stop at the VC Swap — Audit the Detail's Initial Apply Too
+
+After wrapping the swap, the slide may still appear because the
+**detail VC's own content** is animating in. Common offenders inside
+a fresh-mounted detail pane:
+
+- `UITableViewDiffableDataSource.apply(_, animatingDifferences:)` /
+  `UICollectionViewDiffableDataSource.apply(...)` — the first apply
+  hits an empty data source, so every row counts as an insertion and
+  iOS 26 animates each one in (reads as a row-by-row slide-in)
+- `UIView.transition(with: ..., options: .transitionCrossDissolve)` —
+  cross-fade reloads triggered from `viewWillAppear` / a `Combine`
+  publisher that fires on initial bind
+- `UIView.animate { ... }` blocks that wrap `layoutIfNeeded` after
+  loading remote data
+
+Rule of thumb for **sidebar-mounted detail VCs**: the *first*
+apply / reload after the VC mounts should be non-animated; only
+user-initiated diffs (add / edit / delete) should animate. The data
+source itself is the source of truth for "has the user seen content
+before":
+
+```swift
+func applySnapshot() {
+  var snap = NSDiffableDataSourceSnapshot<Section, Item>()
+  // ... build snapshot ...
+  // Only animate when the user can actually perceive a diff.
+  let hadContent = dataSource.snapshot().numberOfItems > 0
+  dataSource.apply(snap, animatingDifferences: hadContent)
+}
+```
+
+This pattern composes cleanly with the swap-wrapper fix: the swap is
+instant, the first apply paints rows immediately, and subsequent
+applies still animate so an add/delete remains legible.
+
+The usual smell when you've only solved half the problem: the *VC
+header* appears instantly (proves the swap is non-animated), but the
+rows below it slide / fade in a frame later (proves the detail VC's
+own apply still animates).
+
 ### Why the Host bg Must Match the Page bg
 
 The host's default `view.backgroundColor` is `systemBackground` (white in light mode). When the inner nav bar is hidden (e.g. dashboard-style detail pages), the strip under the status bar isn't always fully painted by the inner content, and the host's white bleeds through as a band across the top of the secondary pane. Always tint the host to match the detail page's bg token (typically `neutral-50`).
