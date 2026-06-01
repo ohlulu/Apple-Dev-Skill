@@ -196,6 +196,47 @@ The slide reads as a page transition the user didn't ask for.
 - Setting `UIView.setAnimationsEnabled(false)` globally — works but is
   too blunt; can swallow legitimate animations from other call paths
 
+### Strengthen the Wrapper for Sub-Layer Animations
+
+`UIView.performWithoutAnimation` alone does not always suppress
+implicit CALayer animations triggered during the swap's layout pass
+— things like `CAGradientLayer.colors` crossfades,
+`UISegmentedControl` selector-pill movement, `UISwitch` thumb
+animation on initial `isOn`. Strengthen the wrapper:
+
+```swift
+public extension UISplitViewController {
+  func setViewControllerWithoutAnimation(
+    _ vc: UIViewController,
+    for column: UISplitViewController.Column
+  ) {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    UIView.performWithoutAnimation {
+      setViewController(vc, for: column)
+      view.layoutIfNeeded()           // force layout in disabled scope
+    }
+    CATransaction.commit()
+    scrubAnimations(in: vc.view)      // sweep any queued animations
+  }
+
+  private func scrubAnimations(in view: UIView) {
+    view.layer.removeAllAnimations()
+    for sub in view.subviews { scrubAnimations(in: sub) }
+  }
+}
+```
+
+The four parts — transaction-disable + UIView block + layoutIfNeeded
++ post-commit sweep — each catch a different class of animation:
+
+| Layer | Catches |
+|-------|---------|
+| `CATransaction.setDisableActions(true)` | Sub-layer implicit actions (gradient colors, segmented pill, switch thumb, layer position/bounds) |
+| `UIView.performWithoutAnimation` | UIKit animation blocks inside the new VC's `viewDidLoad` / `viewWillAppear` |
+| `view.layoutIfNeeded()` inside the scope | Layout-driven animations triggered by the first pass (intrinsic-size changes propagating up) |
+| `removeAllAnimations` sweep after commit | Animations the system already queued on layers before commit closed |
+
 ### Don't Stop at the VC Swap — Audit the Detail's Initial Apply Too
 
 After wrapping the swap, the slide may still appear because the
@@ -236,6 +277,55 @@ The usual smell when you've only solved half the problem: the *VC
 header* appears instantly (proves the swap is non-animated), but the
 rows below it slide / fade in a frame later (proves the detail VC's
 own apply still animates).
+
+### Async State Loads Bypass the Wrapper
+
+A stronger version of the same trap. The wrapper's
+`CATransaction.setDisableActions` scope **closes when
+`setViewController` returns** — typically within one runloop turn.
+But Settings detail VCs commonly load state asynchronously:
+
+```swift
+override func viewDidLoad() {
+  super.viewDidLoad()
+  setupUI()
+  bindViewModel()
+  Task { await viewModel.loadStatus() }   // <— this runs AFTER the wrapper
+                                          //    closes its transaction
+}
+
+func applyState() {
+  statusCard.configure(with: viewModel.status)   // gradient color
+                                                 // crossfade happens HERE,
+                                                 // outside the wrapper's scope
+}
+```
+
+Symptom: VC header appears instantly, table content is instant
+(if the diffable fix is applied), but a *specific element* later
+fades / crossfades / settles in — typical culprits being a gradient
+banner whose colors change when status arrives, or a form whose
+segment / switch settles into the loaded value.
+
+Fix: wrap the state-update method itself in
+`CATransaction.setDisableActions(true)`. The wrapper covers the
+swap moment; this covers the post-swap async settle.
+
+```swift
+func applyState() {
+  CATransaction.begin()
+  CATransaction.setDisableActions(true)
+  defer { CATransaction.commit() }
+  statusCard.configure(with: viewModel.status)
+  pricingCard.configure(with: viewModel.status, isLoading: viewModel.isLoading)
+}
+```
+
+If the screen also has *intentional* state transitions that should
+animate (e.g. trial → active after a successful purchase), gate the
+disable on "is this the first apply" with a one-shot flag. The
+initial mount paint is unambiguously a content load, not a
+transition; subsequent applies can opt in to animation.
 
 ### Why the Host bg Must Match the Page bg
 
