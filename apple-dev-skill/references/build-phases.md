@@ -83,34 +83,49 @@ Note: SwiftLint is often warning-level (exit 0 on missing), not error-level like
 
 ⚠️ SDK version changes break copy-pasted scripts silently. Pin the version in a comment.
 
+⚠️ **`--build-phase` is not enough by itself.** Firebase SDK 12.x requires `-gsp` and `-p ios` to tag uploads with project + platform metadata. Without them, uploads succeed but show 版本=未知 (version=unknown) in the console, and some dSYMs may be skipped entirely. See: Sotto 2026-06-01 follow-up in `2026-03-13-crashlytics-dsym-silent-failure.md`.
+
 ```swift
 .post(
   script: """
-  set -euo pipefail
+  # Only upload dSYMs during archive (install) builds.
+  if [ "$ACTION" != "install" ]; then exit 0; fi
+  if [ "${DEBUG_INFORMATION_FORMAT}" != "dwarf-with-dsym" ]; then exit 0; fi
   # Firebase SDK 12.x — binary is Crashlytics/upload-symbols (not FirebaseCrashlytics/run)
-  # Verified: 2026-03
-  SCRIPT=$(find "${BUILD_DIR%/Build/*}" -name "upload-symbols" -path "*/Crashlytics/*" | head -1)
-  if [ -n "$SCRIPT" ]; then
-  "${SCRIPT}" --build-phase
+  # Verified: 2026-06
+  SCRIPT=$(find "${BUILD_DIR%Build/*}" -path "*/Crashlytics/upload-symbols" -type f | head -1)
+  if [ -n "${SCRIPT}" ]; then
+    "${SCRIPT}" \\
+      -gsp "${SRCROOT}/Targets/<App>/Resources/GoogleService-Info.plist" \\
+      -p ios \\
+      --build-phase
   else
-  echo "error: Crashlytics upload-symbols not found — dSYMs will not upload" >&2
-  exit 1
+    echo "warning: Crashlytics upload-symbols not found — dSYMs will NOT be uploaded."
   fi
   """,
-  name: "Firebase Crashlytics dSYM Upload",
+  name: "Firebase Crashlytics — Upload dSYMs",
   inputPaths: [
-  "$(DWARF_DSYM_FOLDER_PATH)/$(DWARF_DSYM_FILE_NAME)",
-  "$(DWARF_DSYM_FOLDER_PATH)/$(DWARF_DSYM_FILE_NAME)/Contents/Resources/DWARF/$(PRODUCT_NAME)",
-  "$(DWARF_DSYM_FOLDER_PATH)/$(DWARF_DSYM_FILE_NAME)/Contents/Info.plist",
-  "$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)",
-  ]
+    "${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}",
+    "${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${PRODUCT_NAME}",
+    "${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Info.plist",
+    "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/GoogleService-Info.plist",
+    "$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)",
+  ],
+  basedOnDependencyAnalysis: false
 ),
 ```
 
+Required flags:
+- `-gsp <path>` — Firebase project association. Without this, console shows 版本=未知.
+- `-p ios` — platform tag. Without this, dSYM may land in wrong platform bucket.
+- `--build-phase` — read `DWARF_DSYM_FOLDER_PATH` from env (don't pass dSYM paths manually).
+
 Post-integration checklist:
 - [ ] Build succeeds with zero warnings from the script
-- [ ] Check Firebase Crashlytics dashboard within 24h — no crash data = something is wrong
-- [ ] SDK upgrade? Re-verify binary path: `find "${BUILD_DIR%/Build/*}" -name "upload-symbols"`
+- [ ] Archive once and check Crashlytics console dSYM tab within 24h — **verify version metadata matches the build (not 未知/unknown)**, not just that UUIDs appear
+- [ ] No required-missing rows for the version you just shipped
+- [ ] SDK upgrade? Re-verify binary path: `find "${BUILD_DIR%Build/*}" -path "*/Crashlytics/upload-symbols"`
+- [ ] Migrating from another project? Diff your `Project.swift` Crashlytics script against the known-working one — do not copy a minimal subset
 
 ## Script Sandboxing
 
