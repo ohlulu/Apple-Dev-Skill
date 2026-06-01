@@ -525,6 +525,50 @@ Generate stable identity by default.
 - Do not generate fresh random identifiers on every update unless the row is intentionally transient.
 - Preserve an existing controller for the same logical model when it owns meaningful UI state or in-flight work.
 
+## First-Apply Animation Gate
+
+Diffable data source `apply(_:animatingDifferences:)` animates every
+row that changes between snapshots. A subtle case: the **first apply**
+after the VC mounts hits an empty data source, so every row counts as
+an insertion. With `animatingDifferences: true` every row fades / slides
+in individually, even though to the user this is just "show me the
+list", not a diff.
+
+The wrong gate (and a common one):
+
+```swift
+dataSource.apply(snap, animatingDifferences: !viewModel.isEmpty)
+//                                            ↑ truthy as soon as VM
+//                                              has data — fires animation
+//                                              on the first paint
+```
+
+The correct gate — "has the user actually seen content before":
+
+```swift
+let hadContent = dataSource.snapshot().numberOfItems > 0
+dataSource.apply(snap, animatingDifferences: hadContent)
+```
+
+First apply against an empty data source: `hadContent == false`, paint
+instantly. Subsequent applies (add / edit / delete): `hadContent ==
+true`, animate the diff. This works for sidebar-mounted detail VCs
+where each tap re-creates the VC — the data source resets each mount,
+so the gate naturally toggles back to non-animated on remount.
+
+This is **distinct from** the iOS 26 `setViewController` layout
+regression. If you see rows appearing late after the VC swap, audit
+both in parallel:
+
+- Is the gate `!viewModel.isEmpty`? Fix it as above.
+- Is the VC swap going through `setViewControllerWithoutAnimation`
+  (with `viewController.view.layoutIfNeeded()` after the swap)? See
+  `split-view-controller.md`.
+
+For smaller details, `implicit-animations.md` carries the broader
+catalog of UIKit / CALayer animations that fire without an explicit
+`UIView.animate` block.
+
 ## Common Pitfalls
 
 **Silent delegate failure** — A row controller conforms to `UITableViewDelegate` and implements `trailingSwipeActionsConfigurationForRowAt`. It compiles, tests pass, but swipe actions never appear. Root cause: the container does not forward that method. Fix: check the dispatch manifest before implementing any delegate method in a row controller.

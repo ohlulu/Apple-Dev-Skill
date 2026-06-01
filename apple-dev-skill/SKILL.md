@@ -29,6 +29,32 @@ When a project already has a clear, established local convention, follow it by d
 Ask the user only when local conventions are ambiguous, conflicting, or likely harmful.
 Do not silently replace a strong project convention with this skill's defaults.
 
+## Debugging Heuristic: Stop Stacking Suppression Layers
+
+When fixing a visual / animation / layout bug:
+
+- If layer N fixes the symptom and reveals a new one, layer N was
+  probably a workaround. Stop and find the root cause before adding
+  layer N+1.
+- A real fix usually replaces N earlier suppression layers, not adds
+  to them. If the patch you're about to commit is *additive* to a
+  growing list of `performWithoutAnimation` / `setDisableActions` /
+  `removeAllAnimations` / hidden-by-default flags, it is almost
+  certainly a workaround.
+- Before adding any second suppression, run the four-step diagnostic:
+  (1) minimal repro, (2) vendor changelog / release notes, (3) web
+  research with the exact API name, (4) Instruments Core Animation
+  profiler. See `implicit-animations.md` → "Anti-Pattern: Symptom
+  Stacking" for the long form.
+- iOS version differences matter — a behavior that's broken on iOS 26
+  may have worked on iOS 18, or may have been fixed in a point
+  release. See `ios-26-behavior-changes.md` for the deltas we've
+  catalogued.
+
+This heuristic is mandatory when working on animation-adjacent bugs.
+The codebase has been bitten by it; the skill exists in part because
+we stacked four layers before stopping.
+
 ## Topic Router
 
 Consult the reference file for each topic relevant to the current task. Apply all rules from the matched references — do not skip them for convenience.
@@ -39,11 +65,13 @@ Consult the reference file for each topic relevant to the current task. Apply al
 |-------|-----------|
 | File structure (property ordering, extensions, layout placement for UIViewController, UIView, UITableViewCell, and other UIKit subclasses) | [file-structure](references/file-structure.md) |
 | Animation (duration, curve, fade defaults, expand/collapse choreography, stagger reveal, custom layout view height animation pitfalls) | [animation](references/animation.md) |
+| Implicit animations (CALayer/UIKit animations that fire WITHOUT a UIView.animate block: CAGradientLayer.colors crossfade, UISegmentedControl pill on delta, UISwitch.isOn animated default, diffable first-apply against empty source, iOS 26 .zero-frame settling artifact; disable-at-source recipes via layer.actions = NSNull; per-control vs per-call-site vs per-view suppression; mount-state hygiene checklist; "symptom stacking" anti-pattern with heuristic; iOS version delta table for each behavior) | [implicit-animations](references/implicit-animations.md) |
 | Compound cell row animation (animating row insert/remove in a settings-style compound card cell, UISwitch distortion trap, performBatchUpdates vs invalidateLayout in compositional layout, UIStackView isHidden animation) | [compound-cell-row-animation](references/compound-cell-row-animation.md) |
 | Cell registration (CellRegistration vs legacy register/dequeue, pitfalls, handler lifecycle, retain cycles, dynamic cell types) | [cell-registration](references/cell-registration.md) |
 | List composition (heterogeneous cells, row/item controllers, section controllers, load-more controller, pagination seam, diffable, compositional layout, default shapes, sectionHeaderTopPadding gotcha, sticky header bleed layers) | [list-composition](references/list-composition.md) |
 | Screen composition / composer (programmatic controller instantiation, dependency wiring, navigation closures, scene root composition) | [composer](references/composer.md) |
-| UISplitViewController on iOS 26 (primary column is a floating overlay not a flush sibling, secondary bounds span the full screen, detail content must anchor to safeAreaLayoutGuide leading/trailing, composer ordering, .tile is ignored, push transitions inside secondary nav slide across full width and land under master overlay, SecondaryColumnHost wrapper pattern, axe describe-ui diagnostic for full-width clipping) | [split-view-controller](references/split-view-controller.md) |
+| UISplitViewController on iOS 26 (primary column is a floating overlay not a flush sibling, secondary bounds span the full screen, detail content must anchor to safeAreaLayoutGuide leading/trailing, composer ordering, .tile is ignored, push transitions inside secondary nav slide across full width and land under master overlay, SecondaryColumnHost wrapper pattern, axe describe-ui diagnostic for full-width clipping, .zero-frame settling animation root cause + setViewControllerWithoutAnimation wrapper with viewController.view.layoutIfNeeded after swap) | [split-view-controller](references/split-view-controller.md) |
+| iOS 26 behavior changes catalog (consolidated index of deltas from iOS 18: Liquid Glass sidebar overlay, primaryBackgroundStyle vs primaryBackgroundEffect, setViewController .zero-frame regression, pushViewController same regression fixed in 26.2, push transition full-width slide; what did NOT change but was assumed to; diagnostic workflow when suspecting an iOS 26 regression) | [ios-26-behavior-changes](references/ios-26-behavior-changes.md) |
 | Image resizing (UIGraphicsImageRenderer, preparingThumbnail, CGImageSource downsampling, template icon sizing, display vs encode) | [image-resizing](references/image-resizing.md) |
 | Self-sizing (systemLayoutSizeFitting, preferredContentSize, self-sizing cells, complete constraint chains) | [self-sizing](references/self-sizing.md) |
 | Step transition sizing (wizard / multi-step card with size-changing children, Cassowary compromise between two pinned child VCs, explicit containerHeightConstraint + systemLayoutSizeFitting + scrollView preferred-height bridge + snapshot-and-reparent outgoing child) | [step-transition-sizing](references/step-transition-sizing.md) |
