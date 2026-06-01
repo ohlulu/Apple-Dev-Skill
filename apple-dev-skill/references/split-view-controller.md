@@ -126,43 +126,52 @@ solved. iOS 26 also adds an **implicit slide animation** to
 `setViewController(_:for:.secondary)` even without the wrapper — see
 the next section to disable it.
 
-## Detail Swap Implicit Animation on iOS 26
+## Detail Swap "Settling" Animation on iOS 26
 
 ### Symptom
 
 - Tapping a sidebar row swaps the secondary VC via
   `split.setViewController(detail, for: .secondary)`
-- The new detail slides in from the **left edge** of the secondary
-  pane every single time, even though no `animated:` parameter was
-  passed (the API does not have one)
+- The new VC's content appears to "settle" in over ~1 frame:
+  gradient banner color crossfades, segmented control pill slides
+  into position, labels grow into place, switches animate their
+  thumb
 - Reads as a page transition; visually noisy when the sidebar is a
   Settings / Orders-style master where row picks should feel like
   content updates
+- Easy to misread as "the swap animates". The swap itself is
+  instant. What's animating is the **first layout pass of the new
+  VC's view tree**.
 
-### Root Cause
+### Root Cause (verified)
 
-iOS 26 added an implicit transition animation to the secondary swap
-path. Pre-26 this call was unanimated. The transition lives in
-UIKit's containment machinery and is **not** controlled by any
-public flag on `UISplitViewController` — no `animated:` overload, no
-`preferredSplitBehavior` knob, no delegate hook to opt out.
+Starting on iOS 26, the container's add-child sequence does **not**
+propagate the final size + safe-area insets to the incoming VC's
+view BEFORE the appearance transition begins. The view is added
+with a `.zero` frame (and `.zero` safe-area insets); Auto Layout
+then resolves the real values inside the transition window, and
+every subview's frame appears to grow / settle from the origin.
+
+Sub-elements that look like they're individually animating are NOT
+separate animations — they are **intermediate frames of that one
+Auto Layout resolve**. The gradient banner isn't crossfading; its
+layer bounds are growing from `.zero`. The segmented pill isn't
+moving; the control's bounds are growing from `.zero` and the pill
+is positioning relative to the new bounds. Same mechanism, many
+visible faces.
+
+Apple shipped a partial fix in **iOS 26.2 for the
+`pushViewController` path**
+(https://darjeelingsteve.com/articles/Fixing-UINavigationController-Push-Animation-Layout-Issues-on-iOS-26.html).
+The **`setViewController(_:for:)` path is still affected as of
+26.4** — same underlying mechanism, different entry point.
+(Verified empirically on a DingPOS sim.)
 
 ### Fix
 
-Wrap the call in `UIView.performWithoutAnimation`. This disables
-both the UIKit animation block and the underlying CATransaction
-implicit actions for the duration, which is enough to suppress the
-slide:
-
-```swift
-UIView.performWithoutAnimation {
-  split.setViewController(detail, for: .secondary)
-}
-```
-
-For a project with multiple sidebar-driven detail panes, hoist a
-thin extension to keep call sites clean and the workaround
-documented in one place:
+Force the new VC's view to lay out **AFTER `setViewController`
+returns** so Auto Layout resolves against real bounds + safe area
+before the transition window opens:
 
 ```swift
 public extension UISplitViewController {
@@ -172,10 +181,19 @@ public extension UISplitViewController {
   ) {
     UIView.performWithoutAnimation {
       setViewController(viewController, for: column)
+      // CRITICAL: lay out AFTER the swap so the new VC's view picks up
+      // real bounds + safe area from its parent. Calling this BEFORE
+      // setViewController lays out against .zero and achieves nothing.
+      viewController.view.layoutIfNeeded()
     }
   }
 }
 ```
+
+`UIView.performWithoutAnimation` is belt + braces against any
+animation block UIKit may schedule around the column transition
+itself; it is NOT what kills the settling animation. The
+`layoutIfNeeded` after the swap is the load-bearing line.
 
 ### When to Disable vs Keep
 
@@ -185,57 +203,37 @@ public extension UISplitViewController {
 | Sidebar row ≈ "navigate to a different screen" (Mail accounts switching) | On | Skip the wrapper |
 
 The canonical Settings / iPad master-detail metaphor is the former.
-The slide reads as a page transition the user didn't ask for.
+The "settling" animation reads as a page transition the user didn't
+ask for.
 
-### What Doesn't Work
+### What Doesn't Work (and why)
 
 - `split.setViewController(detail, for: .secondary, animated: false)` — no such overload
 - `preferredSplitBehavior = .tile` — ignored on iOS 26 in this respect
-- Calling on a background runloop or `DispatchQueue.main.async` — the
-  animation is scheduled inside the same runloop turn as the swap
-- Setting `UIView.setAnimationsEnabled(false)` globally — works but is
-  too blunt; can swallow legitimate animations from other call paths
+- `DispatchQueue.main.async { setViewController(...) }` — the layout
+  is still deferred relative to the next layout pass
+- `UIView.setAnimationsEnabled(false)` globally — the animation is
+  not in a UIView block; it's Auto Layout resolving over real time
 
-### Strengthen the Wrapper for Sub-Layer Animations
+### Pitfall: Symptom-Suppression Doesn't Cure the Cause
 
-`UIView.performWithoutAnimation` alone does not always suppress
-implicit CALayer animations triggered during the swap's layout pass
-— things like `CAGradientLayer.colors` crossfades,
-`UISegmentedControl` selector-pill movement, `UISwitch` thumb
-animation on initial `isOn`. Strengthen the wrapper:
+It is tempting (and was the first instinct on this codebase) to
+stack symptom-suppression layers when each new sub-animation
+appears — `CATransaction.setDisableActions(true)` around the swap,
+`removeAllAnimations` sweeps after commit, wrapping every detail
+VC's state-update method in another `CATransaction.disableActions`.
+Each of these visually hides the symptom but leaves the underlying
+zero-frame Auto Layout pass running.
 
-```swift
-public extension UISplitViewController {
-  func setViewControllerWithoutAnimation(
-    _ vc: UIViewController,
-    for column: UISplitViewController.Column
-  ) {
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    UIView.performWithoutAnimation {
-      setViewController(vc, for: column)
-      view.layoutIfNeeded()           // force layout in disabled scope
-    }
-    CATransaction.commit()
-    scrubAnimations(in: vc.view)      // sweep any queued animations
-  }
+If you find yourself adding suppression layer N+1, the prior layer
+N was probably a workaround. Stop, profile, find the real cause.
+For this case the real cause is one Auto Layout pass against a
+`.zero` frame; one `viewController.view.layoutIfNeeded()` after the
+swap solves it cleanly.
 
-  private func scrubAnimations(in view: UIView) {
-    view.layer.removeAllAnimations()
-    for sub in view.subviews { scrubAnimations(in: sub) }
-  }
-}
-```
-
-The four parts — transaction-disable + UIView block + layoutIfNeeded
-+ post-commit sweep — each catch a different class of animation:
-
-| Layer | Catches |
-|-------|---------|
-| `CATransaction.setDisableActions(true)` | Sub-layer implicit actions (gradient colors, segmented pill, switch thumb, layer position/bounds) |
-| `UIView.performWithoutAnimation` | UIKit animation blocks inside the new VC's `viewDidLoad` / `viewWillAppear` |
-| `view.layoutIfNeeded()` inside the scope | Layout-driven animations triggered by the first pass (intrinsic-size changes propagating up) |
-| `removeAllAnimations` sweep after commit | Animations the system already queued on layers before commit closed |
+Keep the symptom-suppression history in your back pocket only as
+*evidence of debugging effort* for future bugs that look similar
+but are actually different.
 
 ### Don't Stop at the VC Swap — Audit the Detail's Initial Apply Too
 
@@ -278,54 +276,41 @@ header* appears instantly (proves the swap is non-animated), but the
 rows below it slide / fade in a frame later (proves the detail VC's
 own apply still animates).
 
-### Async State Loads Bypass the Wrapper
+### Async State Loads After Mount
 
-A stronger version of the same trap. The wrapper's
-`CATransaction.setDisableActions` scope **closes when
-`setViewController` returns** — typically within one runloop turn.
-But Settings detail VCs commonly load state asynchronously:
+A related but **distinct** concern. The swap wrapper covers the
+mount moment. ViewModels that load state asynchronously fire their
+`onChange` AFTER `viewDidLoad` returns:
 
 ```swift
 override func viewDidLoad() {
   super.viewDidLoad()
-  setupUI()
-  bindViewModel()
-  Task { await viewModel.loadStatus() }   // <— this runs AFTER the wrapper
-                                          //    closes its transaction
-}
-
-func applyState() {
-  statusCard.configure(with: viewModel.status)   // gradient color
-                                                 // crossfade happens HERE,
-                                                 // outside the wrapper's scope
+  Task { await viewModel.loadStatus() }   // <— fires AFTER mount
 }
 ```
 
-Symptom: VC header appears instantly, table content is instant
-(if the diffable fix is applied), but a *specific element* later
-fades / crossfades / settles in — typical culprits being a gradient
-banner whose colors change when status arrives, or a form whose
-segment / switch settles into the loaded value.
+With the **real fix in place** (layout forced on first add), the
+async state arrival into already-laid-out subviews is genuinely
+clean: setting `label.text` or `gradientLayer.colors` no longer
+rides an Auto Layout resolve, so it lands instantly. No further
+suppression needed.
 
-Fix: wrap the state-update method itself in
-`CATransaction.setDisableActions(true)`. The wrapper covers the
-swap moment; this covers the post-swap async settle.
+If you see a state-update animation after the layout fix is in
+place, the culprit is usually a UIKit control with its own
+*pre-existing* implicit animation (these have been around since
+iOS 13+, not iOS 26 new):
 
-```swift
-func applyState() {
-  CATransaction.begin()
-  CATransaction.setDisableActions(true)
-  defer { CATransaction.commit() }
-  statusCard.configure(with: viewModel.status)
-  pricingCard.configure(with: viewModel.status, isLoading: viewModel.isLoading)
-}
-```
+- `UISegmentedControl.selectedSegmentIndex` animates the pill move
+  for **delta** changes (0 → 1 animates; 0 → 0 doesn't)
+- `UISwitch.setOn(_, animated:)` defaults `animated: true` — use
+  `setOn(_, animated: false)` on initial sync
+- `CAGradientLayer.colors` change is a free animation — wrap the
+  property write in `CATransaction.setDisableActions(true)` only
+  for the SPECIFIC layer property, not the whole VC
 
-If the screen also has *intentional* state transitions that should
-animate (e.g. trial → active after a successful purchase), gate the
-disable on "is this the first apply" with a one-shot flag. The
-initial mount paint is unambiguously a content load, not a
-transition; subsequent applies can opt in to animation.
+These are legit per-control concerns. Address them at the
+control-level if and when they matter, not by blanket-disabling
+actions on the whole view tree.
 
 ### Why the Host bg Must Match the Page bg
 
