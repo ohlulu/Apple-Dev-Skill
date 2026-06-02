@@ -295,6 +295,49 @@ clean: setting `label.text` or `gradientLayer.colors` no longer
 rides an Auto Layout resolve, so it lands instantly. No further
 suppression needed.
 
+### Sync State Loads During Mount (Bind-Before-Load Trap)
+
+The more dangerous sibling, and the one that masquerades as the
+iOS 26 `.zero`-frame regression. A *synchronous* `viewModel.load()`
+call fires `onChange` **before returning**, while still inside
+`viewDidLoad`. If the bind callback runs `UIView.animate { ... }`
+(common via a `refreshDirtyState(animated: true)` or similar), the
+animation block captures the still-`.zero` view frame as its "from"
+state. When bounds resolve during the appearance window UIKit
+interpolates from `.zero` → real for every subview — indistinguishable
+from the iOS 26 layout regression by eye.
+
+**Symptom**: every Settings detail VC mounts with an expand-from-origin
+animation, but adopting the iOS 26 swap-layout fix doesn't help.
+
+**Telltale**: a sibling detail VC mounted via the same swap path (e.g.
+`CustomerDetailViewController` in this codebase) doesn't animate. The
+iOS 26 platform bug would affect both equally; this one only affects
+VCs whose viewDidLoad fires a sync bind callback into UIView.animate.
+
+**Diagnostic**: empty-body test — see `implicit-animations.md` →
+"Bind-Before-Load: The Sync-Fire Trap" → "Diagnostic".
+
+**Fix**: reorder `viewDidLoad` so `bind()` runs *after* the initial
+load + sync, never before. The first `onChange` fire is then a real
+user mutation post-mount, when animation is what the author intended.
+
+```swift
+// Wrong (the trap)
+bindViewModel()
+viewModel.loadSettings()     // sync → fires onChange now
+syncFieldsFromDraft()
+
+// Right
+viewModel.loadSettings()
+syncFieldsFromDraft()
+bindViewModel()              // first onChange = real user edit
+```
+
+This is independent of — and orthogonal to — the iOS 26 swap-layout
+fix above. Both can exist in the same codebase; both must be fixed
+separately. Don't conflate the two when diagnosing.
+
 If you see a state-update animation after the layout fix is in
 place, the culprit is usually a UIKit control with its own
 *pre-existing* implicit animation (these have been around since
