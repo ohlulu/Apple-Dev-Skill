@@ -55,6 +55,56 @@ The view hierarchy doesn't exist in `init`. Measuring requires constraints to be
 
 If content changes after presentation (e.g., toggling a discount section), call `updatePreferredContentSize()` again. The presentation controller animates to the new size automatically.
 
+### Trap: Auto-Resize Reading Initializer Constants
+
+If you implement an auto-resize method that runs on every layout pass
+(e.g. `viewDidLayoutSubviews → measureAndApplyContentSize()`), read
+the **current** `preferredContentSize.width` (or whichever axis you
+don't measure), not the stored initializer parameter. Otherwise any
+caller that mutates `preferredContentSize` from outside silently has
+their change reverted on the next layout pass.
+
+```swift
+// ❌ Reverts external width mutations every layout pass
+class SheetVC: UIViewController {
+  let preferredWidth: CGFloat  // captured at init
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    let measured = body.systemLayoutSizeFitting(...)
+    preferredContentSize = CGSize(width: preferredWidth, height: measured.height)
+    //                                   ^^^^^^^^^^^^^^ silently undoes any
+    //                                   external `sheet.preferredContentSize.width = ...`
+  }
+}
+
+// ✅ Preserves runtime width mutations
+override func viewDidLayoutSubviews() {
+  super.viewDidLayoutSubviews()
+  let liveWidth = preferredContentSize.width
+  let measured = body.systemLayoutSizeFitting(
+    CGSize(width: liveWidth, height: UIView.layoutFittingCompressedSize.height),
+    withHorizontalFittingPriority: .required,
+    verticalFittingPriority: .fittingSizeLevel
+  )
+  preferredContentSize = CGSize(width: liveWidth, height: measured.height)
+}
+```
+
+**Symptom**: a feature that animates the sheet width (e.g. form-section
+flip 560 ↔ 960) lands the new width briefly, then the sheet snaps
+back to the constructor value on the next runloop turn. The animation
+start frame looks correct; the resting frame is wrong.
+
+**Rule of thumb**: any value that the wrapper *both* writes and lets
+callers mutate externally must be read from the live property on each
+recomputation. Init parameters are seeds, not sources of truth.
+
+This generalizes beyond `preferredContentSize`: any wrapper that
+bridges between "caller-mutable state" and "recomputed-each-pass
+state" must read the live state during recomputation. Otherwise you
+have two competing sources of truth and the recomputation always wins
+the race.
+
 ## Prerequisite: Complete Vertical Constraint Chain
 
 `systemLayoutSizeFitting` only works when every subview in the vertical axis is anchored top-to-bottom without gaps. Common pitfalls:
