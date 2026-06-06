@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Added `Contracts + Wiring` section to `zoomable-image-preview` — piece contracts (HeroSource alpha semantics + 3-place restore, PreviewVC strong-holds delegate, snapshot lives in view not window), ownership graph (UIKit weak → delegate trap), pan handler state-by-state contract (must do / must not do), 7-point acceptance checklist (initial centring, pinch round-trip, cancel pan, commit drag, commit flick, close button, source restoration after 5×).
 - Added `zoomable-image-preview` reference — tap-to-enlarge avatar / image viewer (IG / Photos.app / Telegram style): `.overFullScreen` not `.custom` for blur backdrop; UIScrollView zoom-target centring via `bounds.size =` + symmetric `contentInset` + explicit `contentOffset` snap; `frame =` under non-identity transform inflates `bounds`; circular `cornerRadius` scales with zoom; hero snapshot in `transitionContext.containerView` coords with `alpha = 0` source hiding; manual pan-to-dismiss (not `UIPercentDrivenInteractiveTransition`) for multi-axis follow-finger feel; `shouldRecognizeSimultaneouslyWith` + lenient `shouldBegin` for scroll-view coexistence; panSnapshot identity re-entry guard; third-party VC self-set `transitioningDelegate` trap (TOCropViewController #486); JPEG storage of circular crops produces white corners that the preview must re-mask.
 
 ## [0.5.0] — 2026-05-13

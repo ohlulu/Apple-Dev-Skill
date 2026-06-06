@@ -31,6 +31,87 @@ ManualPanGesture ──┘  (NOT UIPercentDrivenInteractiveTransition)
 
 The pan gesture is **deliberately outside** UIKit's interactive transitioning protocol. UIPercentDrivenInteractiveTransition only scrubs two fixed states linearly — it cannot express the multi-axis follow-finger feel of IG / Photos.app where horizontal damping, scale, blur fade, and pan position move independently.
 
+## Contracts + Wiring
+
+What each piece must guarantee, and who owns whom. Skip these and the implementation looks correct but leaks the source view, drops the animator mid-flight, or orphans snapshots.
+
+### Piece Contracts
+
+**`HeroSource` protocol** — anything that can act as the originating view.
+
+```swift
+@MainActor protocol HeroSource: AnyObject {
+  func heroFrame(in coordinateSpace: UICoordinateSpace) -> CGRect
+  var heroImage: UIImage? { get }
+  var heroCornerRadius: CGFloat { get }
+  var heroIsHidden: Bool { get set }   // implement as alpha = 0 / 1
+}
+```
+
+- `heroIsHidden` MUST be `alpha`-based, not `isHidden`. `isHidden = true` triggers a layout pass in any containing stack view, which jitters the source frame between snapshot creation and the hero animation starting.
+- `heroIsHidden = false` MUST be restored in **three** places, all of which are easy to miss: present cancel completion, dismiss commit completion (pan), dismiss animator completion (close button). Forgetting any one leaves the source invisible on the original screen.
+
+**Source adapter** — extension on the actual source view (e.g. `AvatarImageView`) that conforms to `HeroSource`. Lives on the source view's lifetime; the preview holds only a `weak` reference.
+
+**`PreviewVC`** — the modal viewer.
+
+- Owns the `TransitioningDelegate` `strong`. UIKit's `transitioningDelegate` property is `weak`; if you let the delegate go out of scope the animator dies mid-transition and the modal renders blank.
+- Holds the `HeroSource` `weak`.
+- `viewDidLayoutSubviews` runs `layoutPreviewImage` which must be **idempotent** — it fires multiple times during the transition and on rotation; only changing state when needed avoids re-inflating bounds (Fact 2 Trap A).
+- Pan gesture attached to `self.view`, NOT `scrollView` (see Fact 6 for the coexistence rules).
+- Pan snapshot lives in `self.view`, NOT `window`. View ownership means `dismiss(animated: false)` collects the snapshot automatically; window ownership requires manual cleanup that's easy to leak.
+
+**`PresentAnimator` / `DismissAnimator`** — one short-lived instance per transition, created by the delegate.
+
+- Hold `HeroSource` `weak` (its real owner outlives the animator).
+- Build the moving snapshot in `transitionContext.containerView`, not `self.view`.
+- Restore `source.heroIsHidden = false` on `transitionWasCancelled` for present; always on completion for dismiss.
+
+**`TransitioningDelegate`** — a plain `NSObject` conforming to `UIViewControllerTransitioningDelegate`. Implements `animationController(forPresented:…)` and `animationController(forDismissed:)`. Does NOT implement `interactionControllerForDismissal` — pan dismiss is manual (Fact 5).
+
+### Ownership Graph
+
+```
+  UIKit                                                    Source screen
+    │ weak                                                       │
+    ▼                                                            ▼
+  PreviewVC.transitioningDelegate                          HeroSource view
+    │                                                            ▲
+    │ strong (PreviewVC owns it; UIKit only weak-refs)           │ weak
+    ▼                                                            │
+  TransitioningDelegate ── creates one─per─transition ──────────│
+    │                                                            │
+    ├──► PresentAnimator ────────────────────────────────┘
+    └──► DismissAnimator (close button only)
+```
+
+Key points the graph encodes:
+- PreviewVC → TransitioningDelegate is **strong** (UIKit's `weak` reference is the trap).
+- TransitioningDelegate → HeroSource is **weak** (HeroSource's owner is the source screen, not us).
+- Animators are not retained across transitions — they hold their own weak source reference.
+
+### Pan Handler State Contract
+
+| State | Must do | Must NOT do |
+|---|---|---|
+| `.began` | (1) Tear down any stale snapshot + in-flight animations from a previous gesture. (2) Build snapshot at `previewImageView.convert(bounds, to: view)`. (3) Hide `previewImageView` + closeButton. (4) Reset `backdropAlpha = 1`. | Touch `scrollView.contentOffset` / `zoomScale`. Recreate state if `panSnapshot` is already non-nil with the same identity. |
+| `.changed` | Update `snapshot.transform` from `(max(0, translation.y), translation.x * 0.5)` with scale `1 - progress*0.4`. Set `backdropAlpha = 1 - progress`. | Recreate the snapshot. Move `previewImageView`. |
+| `.ended` / `.cancelled` / `.failed` | Decide commit vs cancel using `progress >= 0.35 OR velocity.y > 900`. Commit: animate snapshot to source frame + radius, then `dismiss(animated: false)`. Cancel: spring back to identity. | Call `dismiss(animated: true)` (stacks a second animation). Skip the `panSnapshot === snapshot` identity guard in completions. |
+
+### Acceptance Checklist
+
+Run all seven before declaring done. The implementation can look correct and still fail any of these silently.
+
+- [ ] **Initial centring**: open preview — image is centred both axes, no offset to top / bottom / either side.
+- [ ] **Pinch round-trip**: pinch in, pan around the zoomed image, pinch back to min — image returns to the same centred position as the initial open.
+- [ ] **Cancel pan**: drag down ~80pt and release — snapshot springs back to centred resting position, backdrop opacity restores, previewImageView and close button visible again.
+- [ ] **Commit pan (drag)**: drag down past 35% of the threshold — snapshot animates smoothly to the source avatar's frame, no flash, no second animation playing on top, dismiss completes.
+- [ ] **Commit pan (flick)**: short fast downward flick (< 35% drag, > 900pt/s velocity) — same smooth dismiss as above.
+- [ ] **Close button**: tap X — dismiss animator runs (snapshot grows in reverse from preview to source), backdrop fades, source visible again.
+- [ ] **Source restoration**: after every dismiss path (close button, pan commit, pan-cancel-then-close) — source view's `alpha == 1` in the original screen. Open + dismiss 5× in a row; check the view debugger for orphan snapshots or duplicate transitioning delegate retained.
+
+Fail any check → hit the matching trap in the Hard-Won Facts or the Anti-Pattern Table below.
+
 ## Hard-Won Facts
 
 ### Fact 1: `modalPresentationStyle = .overFullScreen`, never `.custom`
