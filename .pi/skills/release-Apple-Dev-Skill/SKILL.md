@@ -1,5 +1,5 @@
 ---
-name: release
+name: release-Apple-Dev-Skill
 description: >-
   Execute the tag-driven release flow for this project: update changelog,
   commit, tag, push, and let GitHub Actions create the Release.
