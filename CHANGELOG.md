@@ -1,18 +1,25 @@
 # Changelog
 
-## [Unreleased]
-
-- Added `Contracts + Wiring` section to `zoomable-image-preview` — piece contracts (HeroSource alpha semantics + 3-place restore, PreviewVC strong-holds delegate, snapshot lives in view not window), ownership graph (UIKit weak → delegate trap), pan handler state-by-state contract (must do / must not do), 7-point acceptance checklist (initial centring, pinch round-trip, cancel pan, commit drag, commit flick, close button, source restoration after 5×).
-- Added `zoomable-image-preview` reference — tap-to-enlarge avatar / image viewer (IG / Photos.app / Telegram style): `.overFullScreen` not `.custom` for blur backdrop; UIScrollView zoom-target centring via `bounds.size =` + symmetric `contentInset` + explicit `contentOffset` snap; `frame =` under non-identity transform inflates `bounds`; circular `cornerRadius` scales with zoom; hero snapshot in `transitionContext.containerView` coords with `alpha = 0` source hiding; manual pan-to-dismiss (not `UIPercentDrivenInteractiveTransition`) for multi-axis follow-finger feel; `shouldRecognizeSimultaneouslyWith` + lenient `shouldBegin` for scroll-view coexistence; panSnapshot identity re-entry guard; third-party VC self-set `transitioningDelegate` trap (TOCropViewController #486); JPEG storage of circular crops produces white corners that the preview must re-mask.
-
-## [0.5.0] — 2026-05-13
+## [0.6.0] — 2026-06-09
 
 - **Breaking**: Renamed skill from `uikit-expert-skill` to `apple-dev-skill`.
 - **Breaking**: Renamed GitHub repo from `UIKit-Expert-Skill` to `Apple-Dev-Skill`.
 - Merged `xcode-skill` (Xcode/Tuist project setup, xcconfig, build phases, Makefile, shared schemes, gotchas) into this skill.
 - Merged `swift-coding-style` (type design, protocols, error handling, API design, file organization) into this skill.
 - Added Topic Router sections for Xcode/Project Setup and Swift Coding Style.
-- Added 7 new reference files: xcode-project-setup, xcconfig, build-phases, makefile, Makefile.template, tuist-spm-integration, xcodebuild-error-detection, swift-style.
+- Added 8 new reference files: xcode-project-setup, xcconfig, build-phases, makefile, Makefile.template, tuist-spm-integration, xcodebuild-error-detection, swift-style.
+- Added `zoomable-image-preview` reference — tap-to-enlarge avatar / image viewer (IG / Photos.app / Telegram style): `.overFullScreen` not `.custom` for blur backdrop; UIScrollView zoom-target centring via `bounds.size =` + symmetric `contentInset` + explicit `contentOffset` snap; `frame =` under non-identity transform inflates `bounds`; circular `cornerRadius` scales with zoom; hero snapshot in `transitionContext.containerView` coords with `alpha = 0` source hiding; manual pan-to-dismiss (not `UIPercentDrivenInteractiveTransition`) for multi-axis follow-finger feel; `shouldRecognizeSimultaneouslyWith` + lenient `shouldBegin` for scroll-view coexistence; panSnapshot identity re-entry guard; third-party VC self-set `transitioningDelegate` trap (TOCropViewController #486); JPEG storage of circular crops produces white corners that the preview must re-mask.
+- Added `Contracts + Wiring` section to `zoomable-image-preview` — piece contracts (HeroSource alpha semantics + 3-place restore, PreviewVC strong-holds delegate, snapshot lives in view not window), ownership graph (UIKit weak → delegate trap), pan handler state-by-state contract (must do / must not do), 7-point acceptance checklist (initial centring, pinch round-trip, cancel pan, commit drag, commit flick, close button, source restoration after 5×).
+- Added `step-transition-sizing` reference.
+- Added `cli-distribution-signing` reference.
+- Added `localization-bundle-discovery` and `localizable-strings-escapes` references.
+- Documented iOS 26 implicit-animation traps across `split-view-controller` (push-transition + secondary-swap suppression, three-layer audit, bind-before-load sync-fire) and `apple-dev-skill` Topic Router; nav-bar split appearance + UISearchBar background + sticky header bleed notes.
+- Documented `shadow-and-clipping` UILabel `backgroundColor` + `cornerRadius` trap; `popover-tooltip` `systemLayoutSizeFitting` warning; `self-sizing` auto-resize-on-layout-pass trap.
+- Documented `icloud-ubiquity` `.current` vs `.downloaded` rule.
+- Documented testing async XCTest + task allocator trap and test crash detection.
+- Documented `makefile` BUILD FAILED trap, trash-based clean, tuist companions; `build-phases` Crashlytics `-gsp` + `-p ios` requirement.
+- Documented `swift-style` struct memberwise-init trap for let-with-default.
+- Skill routing description rewritten to trigger by project type, not phrasing.
 
 ## [0.4.0] — 2026-05-07
 
