@@ -1,5 +1,17 @@
 # Diffable Data Source
 
+## Default Choice
+
+**For any new list / collection, diffable is the default. Reach for manual `UITableViewDataSource` / `UICollectionViewDataSource` only with a documented reason** (Swift 6 friction that can't be resolved with the patterns below, an `iOS < 13` deployment target, or a measured perf gate that diffable can't hit).
+
+Manual data sources reliably accumulate three latent costs that diffable removes:
+
+1. **Selection-only refresh defaults to `reloadData()`**. Engineers conflate "highlight the new row" with "refresh the table" and call `reloadData()`. Visible cells re-dequeue, `automaticDimension` height cache is invalidated, sticky headers re-attach — a one-frame visible flicker on every tap. Diffable's `reconfigureItems([oldId, newId])` makes the cheap path the natural path.
+2. **Insert / delete needs manual `performBatchUpdates`** and a parallel data-structure diff. Most apps skip this and call `reloadData()` again, losing free animations and re-introducing the flicker above.
+3. **Stale-callback safety is hand-rolled** (`guard indexPath.section < sections.count && indexPath.row < ...`). Diffable handles this natively via `itemIdentifier(for:)` returning nil.
+
+When reviewing a PR or inheriting code with a manual data source, the question to ask is "why isn't this diffable?" — not "should we add diffable?"
+
 ## Core Principle
 
 `UICollectionViewDiffableDataSource<SectionIdentifierType, ItemIdentifierType>` 與 `UITableViewDiffableDataSource` 的兩個 type parameter **只要求 `Hashable`，不要求 `Identifiable`**。
@@ -112,6 +124,31 @@ Apple UIKit team 的 Tyler Fox：
 3. 你必須在 cellProvider 內 dequeue 同一個 cell type（相同 registration / reuse identifier）
 
 **前提**：cell type 不變。需要換 cell type 時改用 `reloadItems`。
+
+### Downstream Trap: iPadOS Cell Focus Halo
+
+`reloadData()` / `reloadItems` re-dequeue cells, which has a load-bearing side effect on iPad: **the system clears any active focus association on the dequeued cell**. iPadOS draws a default focus halo (`UICell.FocusEffect.automatic`, ~3pt accent-tinted ring outside the cell bounds) on the most recently tapped cell when:
+
+- The cell is selectable (`allowsSelection != .none`)
+- The cell hosts a tap-driven action (e.g. `didSelectRowAt`)
+- `focusEffect` is not explicitly set to `nil`
+
+Migrating from `reloadData()` → `reconfigureItems` (or `reconfigureRows(at:)` on classic table views) keeps the cell instance attached, so the focus halo persists on top of any selection styling the cell renders itself. Symptom: "after I switched to reconfigure, the tapped row has a thick bright accent ring that looks nothing like my configured 1pt border."
+
+```swift
+// In the cell init — disable the system halo when the cell renders
+// its own selection appearance (border + tinted bg, etc.)
+override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+    super.init(style: style, reuseIdentifier: reuseIdentifier)
+    selectionStyle = .none
+    focusEffect = nil          // iOS 15+; suppresses the iPadOS halo
+    setupUI()
+}
+```
+
+Keep the default halo only when the list is intentionally focus-driven (external keyboard / trackpad navigation, accessibility focus rings). For a touch-only POS / data-entry app, the halo is redundant chrome the moment the cell has its own `isSelected` visual.
+
+**The trap is bi-directional**: any time you replace `reloadData()` / `reloadItems` with `reconfigureItems` (or the non-diffable `reconfigureRows(at:)`), audit the cell for a custom selection appearance. The old reload path was suppressing the halo as a side effect; the new path no longer does.
 
 ## iOS 15 Behavior Change（常考點）
 

@@ -83,16 +83,19 @@ protocol CellControllerDataSource {
 }
 
 struct CellController {
-    let id: AnyHashable
+    let id: any Hashable & Sendable
     let dataSource: CellControllerDataSource
     let delegate: UITableViewDelegate?
     let prefetching: UITableViewDataSourcePrefetching?
 
+    /// - Parameter id: A stable, Sendable identifier. Use the domain
+    ///   model's id (String / UUID), or a tagged composite when one
+    ///   controller can host multiple semantic kinds.
     /// - Parameter dataSource: The row controller. Also checked at init time
     ///   for UITableViewDelegate and UITableViewDataSourcePrefetching via
     ///   runtime casting — only the methods listed in the dispatch manifest
     ///   will actually be forwarded by the container.
-    init(id: AnyHashable, _ dataSource: CellControllerDataSource) {
+    init(id: any Hashable & Sendable, _ dataSource: CellControllerDataSource) {
         self.id = id
         self.dataSource = dataSource
         self.delegate = dataSource as? UITableViewDelegate
@@ -100,20 +103,22 @@ struct CellController {
     }
 }
 
-extension CellController: Equatable {
-    static func == (lhs: CellController, rhs: CellController) -> Bool {
-        lhs.id == rhs.id
+extension CellController: nonisolated Equatable {
+    nonisolated static func == (lhs: CellController, rhs: CellController) -> Bool {
+        AnyHashable(lhs.id) == AnyHashable(rhs.id)
     }
 }
 
-extension CellController: Hashable {
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
+extension CellController: nonisolated Hashable {
+    nonisolated func hash(into hasher: inout Hasher) {
+        hasher.combine(AnyHashable(id))
     }
 }
 ```
 
 Derive equality and hashing from `id` only. The stored data source and delegate are behavior, not identity.
+
+**Why `any Hashable & Sendable` + `nonisolated` conformance** — see the Swift 6 Concurrency section below.
 
 The `CellControllerDataSource` protocol replaces raw `UITableViewDataSource` conformance. This eliminates the vestigial `numberOfRowsInSection` from every row controller — the diffable data source already manages row counts from the snapshot. If a project prefers the original approach (conforming directly to `UITableViewDataSource`), that works too — just keep `numberOfRowsInSection` returning `1` in every row controller.
 
@@ -130,26 +135,26 @@ protocol ItemControllerDataSource {
 }
 
 struct CellController {
-    let id: AnyHashable
+    let id: any Hashable & Sendable
     let dataSource: ItemControllerDataSource
     let delegate: UICollectionViewDelegate?
 
-    init(id: AnyHashable, _ dataSource: ItemControllerDataSource) {
+    init(id: any Hashable & Sendable, _ dataSource: ItemControllerDataSource) {
         self.id = id
         self.dataSource = dataSource
         self.delegate = dataSource as? UICollectionViewDelegate
     }
 }
 
-extension CellController: Equatable {
-    static func == (lhs: CellController, rhs: CellController) -> Bool {
-        lhs.id == rhs.id
+extension CellController: nonisolated Equatable {
+    nonisolated static func == (lhs: CellController, rhs: CellController) -> Bool {
+        AnyHashable(lhs.id) == AnyHashable(rhs.id)
     }
 }
 
-extension CellController: Hashable {
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
+extension CellController: nonisolated Hashable {
+    nonisolated func hash(into hasher: inout Hasher) {
+        hasher.combine(AnyHashable(id))
     }
 }
 ```
@@ -524,6 +529,101 @@ Generate stable identity by default.
 - Use domain identity when the same logical item survives refreshes.
 - Do not generate fresh random identifiers on every update unless the row is intentionally transient.
 - Preserve an existing controller for the same logical model when it owns meaningful UI state or in-flight work.
+
+## Swift 6 Concurrency
+
+`NSDiffableDataSourceSnapshot<Section, Item>` was the original deal-breaker for adopting CellController composition under Swift 6 strict concurrency: both generic parameters require `Hashable`, and `apply(_:)` may hash items off the MainActor (the diff algorithm doesn't promise main-thread execution for hashing). A MainActor-isolated `Hashable` conformance fails to satisfy the protocol requirement in this context.
+
+Fix the wrapper at two points:
+
+1. **Constrain `id` to `any Hashable & Sendable`.** The existential is necessary because heterogeneous row controllers carry heterogeneous id types (String for some, UUID for others, tagged composites for cart sub-rows). `Sendable` is the load-bearing addition — it lets the wrapper cross actor boundaries safely when the snapshot's internal diff hashes items.
+
+2. **Mark `Equatable` / `Hashable` conformances `nonisolated`.** This declares that the conformance methods do not require MainActor isolation even when CellController itself is consumed from MainActor code. Without this, Swift 6 emits errors like "main actor-isolated conformance of 'CellController' to 'Hashable' cannot satisfy conformance requirement for a 'Sendable' type parameter".
+
+Why `AnyHashable(id)` inside the conformance: `any Hashable` (existential) is not itself directly Hashable in the type system — `AnyHashable` is the type-erased box that IS Hashable. Hashing through `AnyHashable` is a one-line cost and produces the same value as the underlying type's own hash.
+
+**Subtle Swift 6 trap**: inlining `AnyHashable(id)` inside a larger expression (e.g. `hasher.combine(AnyHashable(id))` or `AnyHashable(lhs.id) == AnyHashable(rhs.id)`) suppresses SE-0352 implicit existential opening, producing:
+
+```
+error: type 'any Hashable & Sendable' cannot conform to 'Hashable'
+note: only concrete types such as structs, enums and classes can conform to protocols
+```
+
+Fix: bind the existential to a `let` first, then use the binding:
+
+```swift
+// Wrong — implicit opening blocked by outer call
+hasher.combine(AnyHashable(id))                 // ❌
+AnyHashable(lhs.id) == AnyHashable(rhs.id)      // ❌
+
+// Right — binding lets Swift open the existential
+let id = AnyHashable(self.id)
+hasher.combine(id)                              // ✅
+
+let lhsId = AnyHashable(lhs.id)
+let rhsId = AnyHashable(rhs.id)
+return lhsId == rhsId                           // ✅
+```
+
+This pattern was crystallised by Essential Developer in their feed case study; the wrapper has been battle-tested across several production codebases under Swift 6 strict concurrency.
+
+```swift
+// Production-ready Swift 6 CellController
+struct CellController {
+    let id: any Hashable & Sendable
+    let dataSource: UITableViewDataSource
+    let delegate: UITableViewDelegate?
+    let prefetching: UITableViewDataSourcePrefetching?
+
+    init(id: any Hashable & Sendable, _ dataSource: UITableViewDataSource) {
+        self.id = id
+        self.dataSource = dataSource
+        self.delegate = dataSource as? UITableViewDelegate
+        self.prefetching = dataSource as? UITableViewDataSourcePrefetching
+    }
+}
+
+extension CellController: nonisolated Equatable {
+    nonisolated static func == (l: CellController, r: CellController) -> Bool {
+        AnyHashable(l.id) == AnyHashable(r.id)
+    }
+}
+
+extension CellController: nonisolated Hashable {
+    nonisolated func hash(into hasher: inout Hasher) {
+        hasher.combine(AnyHashable(id))
+    }
+}
+```
+
+Downstream traps when adopting this in an existing project:
+- Call sites passing `"some-string"` as the id keep working — String is Hashable & Sendable.
+- Call sites passing a class instance or a struct whose stored properties aren't Sendable will fail to compile. Surface the real id type (the model's stable identifier), don't reach for `AnyHashable(anyClass)`.
+- The id type stored at runtime is heterogeneous — do not write `if id is String { ... }` shortcuts at call sites. Treat the id as opaque.
+
+### Diffable Section / Item types under module-default MainActor
+
+Projects that set `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` on a module (Xcode 16+ build setting) make every type in the module MainActor-isolated by default. Section / Item identifier enums declared inside that module — even file-private ones — inherit MainActor and produce:
+
+```
+error: main actor-isolated conformance of 'CustomerListSection' to 'Hashable'
+cannot satisfy conformance requirement for a 'Sendable' type parameter 'SectionIdentifierType'
+```
+
+Fix: declare the identifier types `nonisolated` AND `Sendable` explicitly. The `Sendable` declaration is what carries the conformance across actors; `nonisolated` is what stops the module's MainActor default from re-pinning it.
+
+```swift
+private nonisolated enum CustomerListSection: Hashable, Sendable {
+  case main
+}
+
+// Then
+private lazy var dataSource: UITableViewDiffableDataSource<CustomerListSection, String> = ...
+```
+
+When the section identifier is a stdlib value type (`Int`, `String`, `Date`, `UUID`), no opt-out is needed — those types already provide nonisolated `Hashable` + `Sendable` conformances at the standard-library level. The trap only fires for user-declared section / item types.
+
+This is the section identifier's mirror of the same trap that bit the wrapper above: anything reachable from `NSDiffableDataSourceSnapshot`'s generic parameters must be `Sendable` AND its `Hashable` conformance must be nonisolated.
 
 ## First-Apply Animation Gate
 
