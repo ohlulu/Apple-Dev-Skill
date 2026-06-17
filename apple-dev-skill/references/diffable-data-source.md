@@ -214,6 +214,8 @@ Task.detached {
 | 在 cellProvider 內 `let reg = CellRegistration(...)` | iOS 15+ crash | Registration 提出來當 stored property，見 [cell-registration](cell-registration.md) |
 | 跨 thread 混用同一 dataSource | data race / 動畫錯亂 | 固定主緒，或全程 actor 序列化 |
 | reconfigure 時改 dequeue 不同的 cell type | UIKit assertion | 換 cell type 必須用 `reloadItems`，不是 `reconfigureItems` |
+| 將 reloadData()-based shell 迷入 diffable，`display(_:)` 只呼以 `apply(snapshot)` | id 不變但內容變動的 row（購物車數量、小計、row 內部 view model）静默 stale；diff 看不見變化 | `apply` 前一行 `snapshot.reconfigureItems(snapshot.itemIdentifiers)`，保留與 reloadData() 同謞的 「每次都刷」 contract |
+| `reconfigureItems([id])` 在 selection / setSelected 路徑未先濾掉 snapshot 不存在的 id | iOS 警告 / `NSInternalInconsistencyException` | apply 前 `let known = Set(snap.itemIdentifiers); snap.reconfigureItems(ids.filter { known.contains($0) })` |
 
 ## When to Reach for Diffable
 
