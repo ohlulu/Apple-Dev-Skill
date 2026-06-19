@@ -76,6 +76,44 @@ slides the new VC across the *entire* split width and lands at
 that pins it to `safeAreaLayoutGuide.leadingAnchor`. See
 `split-view-controller.md` → "Fix — Host VC Wrapper".
 
+## UISearchController
+
+### Custom Tint on Nav-Bar-Hosted Search Field Is Not Supported
+
+**iOS 26.0+** — the inner search-field capsule of a `UISearchBar`
+hosted by `navigationItem.searchController` is rendered as Liquid
+Glass material and re-composited on every layout pass. App-side
+tinting (`searchTextField.backgroundColor`, `setSearchFieldBackgroundImage`,
+appearance proxy) is silently overridden. There is no per-control
+tint API in the iOS 26 SDK; WWDC25 direction is "do not paint over
+the material."
+
+The override fires reliably when the screen also carries another
+pinned chrome element (collection-view scope bar, filter chips).
+Screens with only the search bar may *appear* to tint successfully
+until layout invalidates — do not rely on it.
+
+**Fix**: if a custom fill is required, abandon `navigationItem.searchController`
+for that screen and host a custom search-pill field in the root view
+above the list. Wire its text-change callback to whatever
+`UISearchResultsUpdating` was driving. See
+`navigation-bar-appearance.md` → "iOS 26 — Custom Search Bar Tint
+Requires Abandoning UISearchController" for the full recipe and the
+trade-offs that come with it (results-controller plumbing, dimming,
+sidebar integration). Decide once at the architecture level: one
+custom search-pill component, every list surface.
+
+**Anti-fixes**: do NOT stack `setSearchFieldBackgroundImage` over the
+proxy override over `searchTextField.backgroundColor`. None of them
+win, and the image variant strips the rounded capsule chrome when
+`capInsets` aren't perfect, producing worse output than the grey
+default.
+
+**App-wide opt-out**: `UIDesignRequiresCompatibility = YES` in
+`Info.plist` reverts the entire app to iOS 18 visuals (transitional;
+Apple documents it will be removed). Use only if Liquid Glass is
+breaking the whole design system, not for a single search bar.
+
 ## Animation Behavior
 
 ### Detail Swap Looks Animated (No API Changed)

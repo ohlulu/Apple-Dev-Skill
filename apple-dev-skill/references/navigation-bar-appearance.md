@@ -128,6 +128,78 @@ This is **not always sufficient** — some configurations (notably `searchBarSty
 
 This area of UIKit is under-documented and behaviour shifts between iOS versions; expect iteration.
 
+## iOS 26 — Custom Search Bar Tint Requires Abandoning `UISearchController`
+
+**Rule.** If the design calls for a specific brand-coloured search field (any non-system colour) on a list screen and the deployment target includes iOS 26, do NOT use `navigationItem.searchController`. Use a custom field in the root view from the start.
+
+### Why
+
+iOS 26's Liquid Glass re-composites the nav-bar-hosted search-field capsule on every layout pass. None of the historic tinting levers survive:
+
+- `searchBar.searchTextField.backgroundColor = ...` — written, then overwritten by the system pass.
+- `setSearchFieldBackgroundImage(_:for:)` — Liquid Glass composites *over* it; the rounded chrome gets stripped if `capInsets` are not perfect, and even when the image draws it doubles up against the material.
+- `UISearchBar.appearance(whenContainedInInstancesOf:)` proxy — the nav-bar Liquid Glass pass runs after appearance resolution.
+- `preferredSearchBarPlacement = .stacked` — fixes placement but not capsule fill; when the screen also has another pinned chrome element (e.g. a collection-view scope bar), the override fires regardless.
+
+Apple's WWDC25 direction is explicit: "do not paint over the Liquid Glass material." There is no per-control tint API for the nav-bar-hosted search field in the iOS 26 SDK.
+
+### Symptoms that the override is biting you
+
+- The capsule reads as `.tertiarySystemFill` grey while your `backgroundColor` write "worked" elsewhere in the same project.
+- Customer / Order screens that have ONLY a search bar render correctly with `searchTextField.backgroundColor`, but a Products screen with `searchBar + scope bar` does not. The presence of a second pinned chrome element is the tell.
+- `setSearchFieldBackgroundImage` strips the rounded capsule and leaves the magnifier + placeholder floating loose on a flat rectangle.
+
+### Fix — custom field in the root view
+
+Replace `navigationItem.searchController` with a custom `UIView` (a search-pill text field) added as a subview of `view`, pinned above the list / collection. Wire the field's text-change callback to whatever the list's `UISearchResultsUpdating` was driving.
+
+```swift
+private lazy var searchField: SearchPillTextField = {
+  let field = SearchPillTextField(placeholder: L10n.tr("products.search_placeholder"))
+  field.translatesAutoresizingMaskIntoConstraints = false
+  field.onChange = { [weak self] text in self?.viewModel.updateSearchText(text) }
+  return field
+}()
+
+func setupUI() {
+  view.addSubview(searchField)
+  view.addSubview(collectionView)
+  NSLayoutConstraint.activate([
+    searchField.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+    searchField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+    searchField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+    collectionView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 8),
+    // ... pin sides + bottom as usual
+  ])
+}
+```
+
+What you give up by leaving `UISearchController`:
+
+- Results-controller auto-presentation (irrelevant for in-place list filtering)
+- Dimming during search (irrelevant for the same case)
+- iPadOS sidebar search integration (not used on these list screens)
+- VoiceOver's automatic "search field" trait wiring (set it explicitly on the custom field)
+
+What you keep: full control over fill, shadow, focus ring, corner radius, and zero iOS-version drift on the chrome.
+
+### When you must keep `UISearchController` on iOS 26
+
+Keep it when the screen also wants a results-controller / scope-bar / sidebar-integration feature you actually use. Then either:
+
+- Accept the system look (do not try to tint). Document it.
+- Opt out app-wide via `UIDesignRequiresCompatibility = YES` in `Info.plist` — reverts the entire app to iOS 18 visuals. Apple lists this as transitional; budget one or two major-version cycles before it's gone.
+
+Do NOT pile on more `setSearchFieldBackgroundImage` / `searchTextField.backgroundColor` / appearance-proxy writes hoping one wins. None of them do on iOS 26 list screens with pinned chrome.
+
+### What to do at the first sign of this
+
+When a user reports "the search bar is grey, the others are white" on iOS 26:
+
+1. Don't tweak `styleEmbeddedSearchBar`-style helpers. The override is below your reach.
+2. Confirm whether the screen has *other* pinned chrome (scope bar, segmented control, filter chips). If yes, the Liquid Glass override is firing.
+3. Move that screen to the custom-field-in-root-view pattern. The other screens in the same family should follow for consistency — design intent is "one search-field component, every list surface."
+
 ## Three Appearance Slots
 
 | Property | When active |
