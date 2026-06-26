@@ -102,7 +102,7 @@ Consult the reference file for each topic relevant to the current task. Apply al
 | Topic | Reference |
 |-------|-----------|
 | Xcode project setup (workspace layout, synced folders, SPM deps, cross-project refs, app identity, shared schemes, gotchas, warning detection) | [xcode-project-setup](references/xcode-project-setup.md) |
-| xcconfig hierarchy (naming convention, inline vs xcconfig, target-level keys, Xcode upgrade SOP) | [xcconfig](references/xcconfig.md) |
+| xcconfig hierarchy (naming convention, inline vs xcconfig, target-level keys, Tuist `.recommended` `defaultSettings` injecting target-level `SWIFT_VERSION = 5.0` that silently shadows project-xcconfig Swift 6, the `recommended(excluding:)` fix, Xcode upgrade SOP) | [xcconfig](references/xcconfig.md) |
 | Build phase scripts (SwiftFormat pre-commit hook, SwiftLint pre-build, Firebase Crashlytics dSYM upload, script sandboxing) | [build-phases](references/build-phases.md) |
 | Makefile (design principles, simulator destination, run target, adaptation checklist) | [makefile](references/makefile.md) |
 | Makefile template | [Makefile.template](references/Makefile.template) |

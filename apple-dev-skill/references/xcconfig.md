@@ -47,6 +47,11 @@ SWIFT_APPROACHABLE_CONCURRENCY = YES
 OTHER_SWIFT_FLAGS[config=Debug] = $(inherited) -Xfrontend -warn-long-expression-type-checking=300
 ```
 
+> ⚠️ `SWIFT_VERSION` here is **not enough on its own** under Tuist — its
+> `.recommended` default injects `SWIFT_VERSION = 5.0` at the target level,
+> which outranks this project xcconfig. See *Tuist default settings shadow
+> project xcconfig* below before trusting this value.
+
 **{TargetName}.xcconfig** (shared target settings):
 
 ```xcconfig
@@ -117,6 +122,64 @@ Some recommended settings require target-level declaration — the checker doesn
   )
 )
 ```
+
+## Tuist Default Settings Shadow Project xcconfig (the Swift-version trap)
+
+**Setting `SWIFT_VERSION` only in project-level `Project.xcconfig` does NOT put
+the project on that Swift language mode under Tuist.** Tuist's
+`Settings.defaultSettings` defaults to `.recommended`, which injects a curated
+set of build settings — including `SWIFT_VERSION = 5.0` — as **inline,
+target-level** settings on every target it generates.
+
+Build-setting resolution order (highest wins):
+
+```
+target inline  >  target xcconfig  >  project inline  >  project xcconfig
+```
+
+The injected target-level `SWIFT_VERSION = 5.0` therefore silently overrides
+`SWIFT_VERSION = 6` declared in project `Project.xcconfig`. The whole workspace
+compiles in **Swift 5 language mode** while the xcconfig reads `6`.
+
+**Why it hides so well:** `SWIFT_STRICT_CONCURRENCY = complete` +
+`SWIFT_TREAT_WARNINGS_AS_ERRORS = YES` is the *Swift-5 migration mode*, not
+Swift 6 — it builds clean and looks done. The only honest signals are Xcode's
+Build Settings pane (shows "Swift 5") and `-showBuildSettings`.
+
+**`defaultSettings` does not cascade project→target.** Each `Settings` object
+carries its own `defaultSettings` (defaulting to `.recommended`). A target that
+declares its own `settings:` block uses *that* block's default, not the
+project's — so setting it once at project level fixes nothing for targets.
+
+**Fix — exclude the key on every `Settings` object (project + each target):**
+
+```swift
+let swift6Defaults: DefaultSettings = .recommended(excluding: ["SWIFT_VERSION"])
+
+// project
+settings: .settings(base: [...], configurations: [...], defaultSettings: swift6Defaults)
+
+// every target with its own settings
+.target(name: "Foo", settings: .settings(base: [...], defaultSettings: swift6Defaults))
+```
+
+With the injection removed, the value resolves down to project `Project.xcconfig`
+— keeping the xcconfig the single source of truth. A target with **no**
+`settings:` block still needs one (even just
+`.settings(defaultSettings: swift6Defaults)`), because Tuist applies
+`.recommended` to every target independently.
+
+**Verify with the resolved value, never the xcconfig text:**
+
+```bash
+xcodebuild -workspace App.xcworkspace -scheme App -showBuildSettings \
+  -configuration Debug 2>/dev/null | grep ' SWIFT_VERSION '
+# → SWIFT_VERSION = 6
+```
+
+A text-only xcconfig drift audit (comparing `Project.xcconfig` files) will pass
+while the build is on Swift 5 — it cannot see the Tuist injection. Trust
+`-showBuildSettings`.
 
 ## Xcode Upgrade SOP
 
