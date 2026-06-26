@@ -2,6 +2,8 @@
 
 File download, discovery, and restore patterns for apps using iCloud Documents (`CloudDocuments` entitlement) via `FileManager.url(forUbiquityContainerIdentifier:)`.
 
+> For the provider-agnostic backup architecture (OAuth scope/403 re-consent, atomic pointer publish, storage-location migration, restore-integrity hardening) and the same user-visible-storage principle applied to Google Drive / Dropbox, see [cloud-backup-providers](cloud-backup-providers.md).
+
 ## Core Concepts
 
 | Concept | Implication |
