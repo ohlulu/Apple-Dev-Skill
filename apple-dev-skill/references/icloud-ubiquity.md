@@ -81,6 +81,29 @@ For restoring backups with hundreds of files:
 | Polling without checking `ubiquitousItemDownloadingErrorKey` | iCloud reports failure but app waits until timeout | Check error key each poll; abort if all remaining files have errors |
 | Treating `.downloaded` as restore-success | Silently restores a **stale** backup on cross-device restore — a newer version on iCloud was never fetched | Only accept `.current`; keep polling until daemon confirms latest version |
 
+### Poll With a FRESH URL Every Iteration
+
+**`URL` caches resource values per instance.** A polling loop that re-queries
+the same `URL` instances re-reads the first answer forever —
+`isUploaded` / `downloadingStatus` never flips even after the daemon
+finishes, so the wait burns its whole budget and times out. Rebuild the URL
+from its path on every poll:
+
+```swift
+while Date() < deadline {
+    for staleURL in urls {
+        let url = URL(fileURLWithPath: staleURL.path)   // fresh instance = fresh values
+        let values = try url.resourceValues(forKeys: keys)
+        ...
+    }
+    try await Task.sleep(for: .seconds(2))
+}
+```
+
+This applies to **both directions** (upload confirmation and download
+status). It is the same reason `NSMetadataQuery` — not repeated
+`resourceValues` reads — is the source of truth for remote state.
+
 ### URL Resource Keys for Download Status
 
 ```swift
@@ -110,6 +133,46 @@ if name.hasPrefix("."), name.hasSuffix(".icloud") {
     // Use realURL for startDownloadingUbiquitousItem
 }
 ```
+
+## Uploading Files (Backup Direction)
+
+Writing into the ubiquity container is a **local copy** — the daemon uploads
+asynchronously afterwards. A correct upload wait has four properties:
+
+| Property | Rule | Why |
+|----------|------|-----|
+| Progress source | Report per-file progress from the **upload-confirmation poll** (`ubiquitousItemIsUploadedKey` count), never from the local copy loop | Local copies finish in milliseconds; reporting them pins the UI at "N/N" for the entire real upload |
+| Liveness, not just deadline | Fail fast when nothing transitioned to uploaded AND nothing reports `ubiquitousItemIsUploadingKey` for a stall window (~3 min) | A wedged daemon (signed-out account, quota, brctl faults) otherwise burns the full budget — 120s × 20 files ≈ 40 silent minutes — before the user sees an error. `isUploading == true` resets the stall clock: a slow single large file is alive, not stalled |
+| Budget floor | `max(perFileTimeout × count, ~300s)` | A 1-file wait (the `CURRENT.json` pointer commit) must outlive one slow-but-alive daemon cycle and must not be tighter than the stall detector it defers to |
+| Failure diagnostics | On stall/timeout, dump each not-uploaded file's `isUploaded`/`isUploading` | Device logs then name the exact file the daemon is sitting on |
+
+```swift
+var lastUploadedCount = -1
+var lastActivity = Date()
+while Date() < deadline {
+    var uploadedCount = 0, anyUploading = false
+    for staleURL in urls {
+        let url = URL(fileURLWithPath: staleURL.path)          // fresh instance!
+        let v = try url.resourceValues(forKeys: keys)
+        if let error = v.ubiquitousItemUploadingError { throw ... }  // quota/auth — don't wait it out
+        if v.ubiquitousItemIsUploaded == true { uploadedCount += 1 }
+        else if v.ubiquitousItemIsUploading == true { anyUploading = true }
+    }
+    if uploadedCount == urls.count { return }
+    if uploadedCount != lastUploadedCount {                    // real progress → report + reset stall
+        progress(uploadedCount, urls.count)
+        lastUploadedCount = uploadedCount; lastActivity = Date()
+    } else if anyUploading {
+        lastActivity = Date()                                  // alive, keep waiting
+    } else if Date().timeIntervalSince(lastActivity) > stallTimeout {
+        throw ...("iCloud is not syncing — check iCloud storage and iCloud Drive settings")
+    }
+    try await Task.sleep(for: .seconds(2))
+}
+```
+
+Gate the pointer commit (`CURRENT.json`) on the bundle wait completing — see
+atomic publish in [cloud-backup-providers](cloud-backup-providers.md).
 
 ## NSUbiquitousContainers — Files App Visibility
 

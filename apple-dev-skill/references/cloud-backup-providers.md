@@ -98,6 +98,61 @@ if http.statusCode == 403, body.contains("insufficientScopes") {
 - Make `providerNotAuthorized` route to the same "Reconnect" UI as a first-time
   connect — re-consent and connect are the same flow.
 
+## Transfer Session: Ephemeral + URLCache Fully Disabled
+
+Give backup/restore transfers a dedicated `URLSession` with the cache OFF:
+
+```swift
+enum BackupURLSession {
+  static let shared: URLSession = {
+    let config = URLSessionConfiguration.ephemeral
+    config.timeoutIntervalForRequest = 30
+    config.timeoutIntervalForResource = 120
+    config.urlCache = nil
+    config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+    return URLSession(configuration: config)
+  }()
+}
+```
+
+- **URLCache must be disabled for POST-download APIs.** CFNetwork caches
+  POST responses keyed by URL (Dropbox `files/download` style endpoints),
+  and replaying a cached POST deterministically kills the connection
+  mid-body — `-1005 networkConnectionLost`, errno 57 — even on a
+  freshly-opened connection. Signature: the FIRST fetch of a URL succeeds,
+  every repeat fails, retries included; the failing task summary shows
+  `cache_hit=true`. Transfers gain nothing from HTTP caching anyway: blobs
+  are written to disk and manifests/pointers must be fresh.
+- **Ephemeral** because transfers need no persistent cookies/credentials,
+  and it sidesteps shared-pool interference from the rest of the app.
+- Set both `urlCache = nil` AND the ignore policy — either alone fixes the
+  replay bug, both makes the intent unmissable.
+
+### POSTs Are Not Auto-Retried — Add a Bounded Retry
+
+URLSession transparently retries **idempotent GETs** on a stale keep-alive /
+reset connection; **POSTs surface the error to you**. REST content APIs that
+download via POST (Dropbox) therefore need one explicit bounded retry on
+`URLError.networkConnectionLost`; GET-based providers (Google Drive
+`?alt=media`) get the same resilience for free:
+
+```swift
+do {
+  (data, response) = try await makeRequest(token)
+} catch let urlError as URLError where urlError.code == .networkConnectionLost {
+  try await Task.sleep(for: .milliseconds(300))   // stale-connection reuse
+  (data, response) = try await makeRequest(token)
+}
+```
+
+If the retry ALSO fails deterministically, stop retrying and split the
+problem: replay the exact request with `curl` and the same bearer token. curl
+OK + app failing = client-side (session config, cache, request shape); curl
+failing = server/account/network. One experiment, whole diagnosis space
+halved. The CFNetwork task-summary log line is the other high-signal probe:
+`response_status`, `cache_hit`, `reused`, `protocol` tell you whether the
+server answered, the cache interfered, and the connection was fresh.
+
 ## URLSession Upload Task: Body Goes via `from:`, Not `httpBody`
 
 When using `URLSession.upload(for:from:)`, the body MUST come from the `from:`
@@ -220,6 +275,7 @@ corrupted). Harden the restore swap:
 | Key resume-skip on **SHA-256**, not byte size | Same-size-different-content lets a committed version silently disagree with its manifest. Content hash is the only safe equality. |
 | Hold the shared write **gate** around the restore DB/media swap | The swap must not interleave with live note/media writes. |
 | Commit/swap the DB and media **atomically** | A reader (or a crash) must see all-old or all-new, never a mixed state. |
+| **Close the live DB connections BEFORE swapping the sqlite file**, rebuild after | Replacing the file under open connections is a SQLite API violation (`BUG IN CLIENT OF libsqlite3.dylib: vnode unlinked while in use`): old handles keep reading the dead inode and any write through them can corrupt or silently diverge. Give the DB manager an explicit close/reopen lifecycle for restore, and notify long-lived readers (observers, repositories) to re-resolve. |
 
 ```swift
 // Path-traversal guard before any download/swap:
@@ -246,3 +302,7 @@ for name in manifest.mediaFilenames {
 8. **Time-box** cleanup; never block completion.
 9. Treat the restore bundle as **untrusted**: basename guard, SHA-256 resume,
    write gate, atomic swap.
+10. Dedicated **ephemeral session, URLCache fully disabled**; bounded
+    `-1005` retry for POST downloads; curl-replay as the first diagnostic.
+11. **Close live DB connections before the restore file swap**; reopen and
+    re-resolve readers after.
