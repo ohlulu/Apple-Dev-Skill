@@ -191,6 +191,39 @@ file across, then commit the visible pointer last.
 second mint the same id and overwrite a live version. The compact layout stays
 lexicographically time-ordered, which resume and cleanup rely on.
 
+## Breaking Bundle Formats: New Pointer Namespace, Never the Old Pointer
+
+**The pointer file is read by every reader ever shipped.** A schema gate in
+today's build cannot protect yesterday's builds — they blindly restore
+whatever `CURRENT.json` names, then fail at decode time (or worse, after the
+DB swap). So the moment a bundle format needs a newer reader, route it to a
+NEW pointer file and freeze the old one's contract:
+
+| Rule | Why |
+|------|-----|
+| `CURRENT.json` may only ever reference bundles the OLDEST shipped reader can consume | Legacy readers have no gate; stale-but-readable beats newest-but-crashing |
+| Bundles requiring reader schema N ≥ 2 commit to their own namespace (`CURRENT2.json`, …) | Old readers never see the name; updated readers opt in |
+| Updated readers resolve the **newest version across all namespaces** | Fixed-width UTC-timestamp versionIds compare lexicographically, so "newest" is a string max — handles a v1 backup made from an old device AFTER a v2 backup from a new one |
+| Cleanup keep-sets and pending-version listings treat EVERY namespace target as committed | After a schema-2 commit, `CURRENT.json` still references an older schema-1 bundle; pruning it leaves legacy readers dangling |
+| Keep the in-app schema gate too (reject `schemaVersion > supported` before any download) | Defense in depth for FUTURE formats: a schema-3 writer will use `CURRENT3.json`, but the gate also covers tampered or hand-moved bundles |
+
+Write rule stays minimum-reader: a bundle that doesn't use the new feature
+writes the old schema AND commits to the old pointer — users who never touch
+the feature keep full cross-version compatibility.
+
+Shape it as one primitive + shared derivation so all providers stay in sync:
+
+```swift
+protocol BackupProvider {
+    func fetchPointer(minimumReaderSchema: Int) async throws -> BackupCurrentPointer?
+    func commitCurrentPointer(version: String, minimumReaderSchema: Int) async throws
+}
+extension BackupProvider {
+    func fetchCurrentPointer() async throws -> BackupCurrentPointer? { /* max across namespaces */ }
+    func committedVersions() async -> Set<String> { /* every namespace target */ }
+}
+```
+
 ## Storage-Location Migration Hook
 
 When you change *where* a provider stores bundles (hidden → visible), add an
@@ -293,7 +326,9 @@ for name in manifest.mediaFilenames {
 2. **Find-or-create** the root folder; cache its id; treat it as user-owned.
 3. Route **403 `insufficientScopes`** → wipe both tokens → full re-consent.
 4. `upload(for:from:)` body via `from:` only — no `httpBody`.
-5. **Atomic publish** — write the bundle, flip a single `CURRENT.json` last;
+5. **Atomic publish** — write the bundle, flip a single pointer file last;
+   breaking bundle formats get a NEW pointer namespace (`CURRENT2.json`) so
+   legacy readers never resolve what they can't decode;
    millisecond-precision version ids.
 6. Add an **idempotent best-effort migration hook** for any future location
    change; run it on restore; pointer last; leave old data as a safety net.
