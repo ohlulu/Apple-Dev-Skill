@@ -55,6 +55,28 @@ This heuristic is mandatory when working on animation-adjacent bugs.
 The codebase has been bitten by it; the skill exists in part because
 we stacked four layers before stopping.
 
+Cross-trigger: if a visual / animation / layout fix fails once, load the
+global `systematic-debugging` skill and follow its phases. After a second
+failed fix, web search with the exact API name and symptom is mandatory —
+stop iterating on local guesses.
+
+## Mockup / Screenshot Alignment (mandatory for UI work)
+
+When the task is "make the screen match a mockup / reference screenshot",
+reporting done requires screenshot evidence, not code reading:
+
+1. Implement, build, run, and capture a simulator screenshot (axe / simctl),
+   resized before reading (`sips --resampleWidth 640 <file>`).
+2. Read the mockup and your screenshot side by side; list every visible
+   difference — spacing, typography, color, alignment, shadows, missing
+   elements.
+3. Fix, re-capture, repeat. Report done only when the diff list is empty or
+   every remaining difference has an explicit platform-idiom justification.
+
+Never claim "aligned" from code alone — the screenshot comparison is the
+evidence. Skipping this loop is the single largest source of repeated user
+corrections.
+
 ## Topic Router
 
 Consult the reference file for each topic relevant to the current task. Apply all rules from the matched references — do not skip them for convenience.
