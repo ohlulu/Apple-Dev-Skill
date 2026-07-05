@@ -83,7 +83,7 @@ Note: SwiftLint is often warning-level (exit 0 on missing), not error-level like
 
 ⚠️ SDK version changes break copy-pasted scripts silently. Pin the version in a comment.
 
-⚠️ **`--build-phase` is not enough by itself.** Firebase SDK 12.x requires `-gsp` and `-p ios` to tag uploads with project + platform metadata. Without them, uploads succeed but show 版本=未知 (version=unknown) in the console, and some dSYMs may be skipped entirely. See: Sotto 2026-06-01 follow-up in `2026-03-13-crashlytics-dsym-silent-failure.md`.
+⚠️ **`--build-phase` is not enough by itself.** Firebase SDK 12.x requires `-gsp` and `-p ios` to tag uploads with project + platform metadata. Without them, uploads succeed but the Crashlytics console shows version=unknown for every build, and some dSYMs may be skipped entirely — the failure is silent on the build side.
 
 ```swift
 .post(

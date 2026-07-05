@@ -149,11 +149,15 @@ Follow Apple's official API Design Guidelines:
   inside the type body at the bottom; no extension needed
 
 ### MARK Comments
-- Inside a type body → **no `// MARK: -`**. Lifecycle methods grouped together
-  are self-evident; section headers add noise, not clarity.
-- On `extension` blocks → only add when the extension's content is complex
-  enough that its purpose isn't immediately obvious; skip when intent is clear
-  at a glance
+- **UIKit subclasses** (view controllers, views, cells) → use the MARK
+  anchors from [file-structure](file-structure.md): `// MARK: - Lifecycle`
+  in the type body, `// MARK: - <Responsibility>` on each extension.
+  These files run long; MARK anchors let offset-based file reads land on
+  the right section.
+- **Plain Swift types** (models, services, small value types) → skip MARK
+  inside the type body; grouped members are self-evident at that size.
+  On `extension` blocks, add a MARK only when the extension's purpose
+  isn't obvious at a glance.
 
 ### Error Type Placement
 - Nest error types inside the concrete implementation as `Error`
@@ -162,3 +166,18 @@ Follow Apple's official API Design Guidelines:
 - Protocols declare `throws` only; errors belong to the concrete type by default
 - When a protocol needs typed throws for a specific reason, the error type may
   live at the protocol level — but treat this as the exception, not the rule
+
+---
+
+## Generation Checklist
+
+Before shipping new Swift types:
+
+- [ ] `let` + `struct` by default; every `var` / `class` has a reason
+- [ ] No boolean + optional pairs that can contradict — model variants as enums with associated values
+- [ ] No stored derived data — computed properties instead
+- [ ] Error severity matches the mechanism (Optional / throws / Result vs assert / precondition / fatalError)
+- [ ] Names follow Apple API Design Guidelines (mutating imperative, non-mutating noun/-ed/-ing, boolean assertions)
+- [ ] Private members in a trailing `private extension` (except very small files)
+- [ ] Error types nested inside the concrete implementation, not top-level
+- [ ] MARK usage matches the file kind (UIKit subclass → file-structure anchors; plain type → minimal)

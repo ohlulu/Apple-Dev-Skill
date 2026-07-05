@@ -2,7 +2,16 @@
 
 ## Core Principle
 
-Keep animations minimal and snappy. Most UI state changes need only a short linear fade. Avoid spring animations unless explicitly requested.
+Keep animations minimal and snappy. Pick the animation tier from the scenario — do not mix tiers:
+
+| Tier | Scenario | Sanctioned default |
+|------|----------|--------------------|
+| Simple state change | Show / hide / toggle a single element | Linear fade 0.1s |
+| Transition | Push / present / constraint animation | Linear, duration case-dependent |
+| Choreography | Expand/collapse, staggered entrance, multi-element reveal | Spring (recipes below) — this IS the default for choreography, no user request needed |
+| Standalone "springify X" | User asks to add bounce to an existing simple animation | Only when explicitly requested |
+
+The "no spring unless requested" rule applies to tiers 1–2 only. Choreography earns spring because multi-element motion without overshoot reads as mechanical.
 
 ## Default: Linear Fade 0.1s
 
@@ -31,17 +40,19 @@ UIView.animate(withDuration: 0.25, delay: 0, options: .curveLinear) {
 }
 ```
 
-## Curve: Always Linear
+## Curve for Simple Changes: Linear
 
-Use `.curveLinear` by default. Do not use spring animations (`UIView.animate(withSpringDuration:)`, `usingSpringWithDamping`) unless the user explicitly requests spring behavior.
+For tier 1–2 (simple state changes and transitions), use `.curveLinear`. Do not springify a plain show/hide or push unless the user explicitly asks.
 
 ```swift
-// ✅ Default
+// ✅ Simple show/hide — linear
 UIView.animate(withDuration: 0.1, delay: 0, options: .curveLinear) { ... }
 
-// ❌ Don't add spring unless requested
+// ❌ Don't add spring to a plain fade unless requested
 UIView.animate(withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.8, ...) { ... }
 ```
+
+For tier 3 (choreography), the spring recipes in the sections below are the sanctioned defaults — use them directly.
 
 ## Expand / Collapse Choreography
 
@@ -673,4 +684,15 @@ Auto Layout is immune — it sets `bounds` and `center` internally.
 | Collapse height (subview-based) | 0.3s | Spring (damping 0.9) |
 | Text expand (constraint + clip) | 0.4s | Spring (damping 0.85) |
 | Text collapse (constraint + clip) | 0.3s | Spring (damping 0.9) |
-| Spring | Only when explicitly requested | Spring |
+| Springifying a tier 1–2 animation | Only when explicitly requested | Spring |
+
+## Generation Checklist
+
+Before shipping animation code:
+
+- [ ] Tier identified — simple fade (linear 0.1s), transition (linear, case duration), or choreography (spring recipes above)
+- [ ] No spring on plain show/hide/toggle
+- [ ] Stagger delays use `Task.sleep`, never `UIView.animate(delay:)` (model-layer values snap to final state during the delay)
+- [ ] Custom layout views: height precomputed + `setNeedsLayout()` before the animation block; `layoutIfNeeded()` on the nearest scroll ancestor inside it
+- [ ] Views that may carry transforms are positioned with `bounds` + `center`, never `frame`
+- [ ] Text height animation uses constraint + clip container, not `numberOfLines` toggling

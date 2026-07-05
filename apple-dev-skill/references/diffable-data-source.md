@@ -6,36 +6,37 @@
 
 Manual data sources reliably accumulate three latent costs that diffable removes:
 
-1. **Selection-only refresh defaults to `reloadData()`**. Engineers conflate "highlight the new row" with "refresh the table" and call `reloadData()`. Visible cells re-dequeue, `automaticDimension` height cache is invalidated, sticky headers re-attach — a one-frame visible flicker on every tap. Diffable's `reconfigureItems([oldId, newId])` makes the cheap path the natural path.
-2. **Insert / delete needs manual `performBatchUpdates`** and a parallel data-structure diff. Most apps skip this and call `reloadData()` again, losing free animations and re-introducing the flicker above.
+1. **Selection-only refresh defaults to `reloadData()`**. Engineers conflate "highlight the new row" with "refresh the table" and call `reloadData()`. Visible cells re-dequeue, the `automaticDimension` height cache is invalidated, sticky headers re-attach — a one-frame visible flicker on every tap. Diffable's `reconfigureItems([oldId, newId])` makes the cheap path the natural path.
+2. **Insert / delete needs manual `performBatchUpdates`** plus a parallel data-structure diff. Most apps skip this and call `reloadData()` again, losing free animations and re-introducing the flicker above.
 3. **Stale-callback safety is hand-rolled** (`guard indexPath.section < sections.count && indexPath.row < ...`). Diffable handles this natively via `itemIdentifier(for:)` returning nil.
 
 When reviewing a PR or inheriting code with a manual data source, the question to ask is "why isn't this diffable?" — not "should we add diffable?"
 
 ## Core Principle
 
-`UICollectionViewDiffableDataSource<SectionIdentifierType, ItemIdentifierType>` 與 `UITableViewDiffableDataSource` 的兩個 type parameter **只要求 `Hashable`，不要求 `Identifiable`**。
+Both type parameters of `UICollectionViewDiffableDataSource<SectionIdentifierType, ItemIdentifierType>` and `UITableViewDiffableDataSource` **require only `Hashable`, not `Identifiable`**.
 
-Diffable 的職責切割：
-- **identity 變動**（哪些 row 在、怎麼排）→ Diffable 透過 snapshot diff **自動處理**（insert / delete / move / reorder）
-- **同一 row 的內容變動**（id 不變、欄位變）→ **必須**用 `reconfigureItems(_:)` 顯式觸發
+Diffable's responsibility split:
 
-兩者是設計上分開的責任，不是「自動 diff 有漏洞」。
+- **Identity changes** (which rows exist, in what order) → handled **automatically** via snapshot diff (insert / delete / move / reorder)
+- **Content changes within the same row** (same id, different fields) → **must** be triggered explicitly with `reconfigureItems(_:)`
+
+These are two deliberately separated responsibilities — not a hole in the automatic diff.
 
 ## ItemIdentifierType: Two Apple-Blessed Patterns
 
-Apple 從 WWDC 2019 起同時祝福兩種寫法。選擇依「model 是否跨到其他框架（SwiftUI / Combine）」而定。
+Apple has endorsed both patterns since WWDC 2019. Choose based on whether the model crosses into other frameworks (SwiftUI / Combine).
 
-### Pattern A：整個 model 當 identifier
+### Pattern A: the whole model as identifier
 
-WWDC 2019 Session 220 主示範。Mountain struct 本身 `Hashable`，直接當 identifier 使用。
+The WWDC 2019 Session 220 demo shape — the model struct itself is `Hashable` and used directly as the identifier.
 
 ```swift
 struct Product: Hashable {
     let id: String
     var name: String
     var stock: Int
-    // Synthesized Hashable: 所有屬性參與
+    // Synthesized Hashable: all properties participate
 }
 
 private var dataSource: UICollectionViewDiffableDataSource<Section, Product>!
@@ -45,32 +46,35 @@ dataSource = .init(collectionView: cv) { cv, indexPath, product in
 }
 ```
 
-**內容變動行為**（用 synthesized hash）：
-- stock 變 → hash 變 → Diffable 視為 **delete 舊 + insert 新** → cell dequeue 重建 → 閃爍
-- 解法：明確呼叫 `reconfigureItems([newProduct])` 保留現有 cell
+**Content-change behavior** (with the synthesized hash):
 
-**變體**：自訂 `Hashable` 只比 id（讓 Diffable 視 stock 變動為「同一筆」）：
+- `stock` changes → hash changes → diffable treats it as **delete old + insert new** → cell is re-dequeued → visible flicker
+- Fix: call `reconfigureItems([newProduct])` explicitly to keep the existing cell
+
+**Variant**: custom `Hashable` comparing only `id` (so diffable treats a stock change as "same item"):
+
 ```swift
 extension Product {
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
     static func == (l: Product, r: Product) -> Bool { l.id == r.id }
 }
-// stock 變 → hash 不變 → Diffable 視為「完全相同、不動作」
-// 必須明確 reconfigureItems 告訴它「內容變了」
+// stock changes → hash unchanged → diffable sees "identical, do nothing"
+// You MUST call reconfigureItems to tell it "content changed"
 ```
-合法但有副作用：此 `Hashable` 一旦跨到 SwiftUI（`ForEach`、`.animation(_:value:)`、`.equatable()`）或 Combine 比較流會誤判「內容沒變」。
 
-### Pattern B：ID 當 identifier、cellProvider 查 model
+Legal but with a side effect: once this `Hashable` crosses into SwiftUI (`ForEach`, `.animation(_:value:)`, `.equatable()`) or Combine equality streams, they will wrongly conclude "content didn't change."
+
+### Pattern B: ID as identifier, cellProvider looks up the model
 
 ```swift
-struct Product: Hashable {                          // synthesized 即可,內容變可偵測
+struct Product: Hashable {                          // synthesized is fine; content changes stay detectable
     let id: String
     var name: String
     var stock: Int
 }
 
 private var dataSource: UICollectionViewDiffableDataSource<Section, String>!
-private var products: [String: Product] = [:]      // ID 查 model
+private var products: [String: Product] = [:]      // ID → model lookup
 
 dataSource = .init(collectionView: cv) { [weak self] cv, indexPath, id in
     guard let product = self?.products[id] else { return nil }
@@ -78,52 +82,54 @@ dataSource = .init(collectionView: cv) { [weak self] cv, indexPath, id in
 }
 
 func updateStock(productID: String, newStock: Int) {
-    products[productID]?.stock = newStock           // 更新真相
+    products[productID]?.stock = newStock           // update the source of truth
     var snapshot = dataSource.snapshot()
-    snapshot.reconfigureItems([productID])          // 告訴 Diffable「同 id、內容變」
+    snapshot.reconfigureItems([productID])          // tell diffable "same id, new content"
     dataSource.apply(snapshot, animatingDifferences: false)
 }
 ```
 
-ItemIdentifierType 是 `String`，Diffable 物理上看不到 stock。「自動偵測內容變化」對它而言不可能——這正是 `reconfigureItems` 存在的理由。
+The ItemIdentifierType is `String` — diffable physically cannot see `stock`. "Automatic content-change detection" is impossible by construction, which is exactly why `reconfigureItems` exists.
 
-### Pattern 選擇判準
+### Choosing between the patterns
 
-| 情境 | 選 |
-|------|----|
-| Model 只服務 UIKit Diffable、不跨框架 | A（語法最簡） |
-| Model 同時被 SwiftUI `ForEach` / Combine `Equatable` 使用 | B（identity 與 content 在型別層級分開） |
-| Server payload 頻繁推同 id 不同欄位 | B（更新只需 `products[id] = new` + reconfigure） |
-| Cell 顯示需要的資訊就是 model 本身、且 model 是穩定 value type | A |
+| Situation | Pick |
+|-----------|------|
+| Model serves only UIKit diffable, never crosses frameworks | A (simplest syntax) |
+| Model is also consumed by SwiftUI `ForEach` / Combine `Equatable` | B (identity and content separated at the type level) |
+| Server frequently pushes the same id with different fields | B (update is just `products[id] = new` + reconfigure) |
+| The cell's display data IS the model, and the model is a stable value type | A |
 
-**心法**：A pattern 把 identity 與 content 都壓在同一個 `Hashable` 上；B pattern 在型別層級把兩者分開。哪個簡單、哪個安全，看 model 流向哪裡。
+**Mental model**: Pattern A collapses identity and content onto one `Hashable`; Pattern B separates them at the type level. Which is simpler and which is safer depends on where the model flows.
 
 ## reconfigureItems vs reloadItems vs apply
 
-iOS 15+ 三種更新 API，各有用途：
+Three update APIs on iOS 15+, each with a distinct job:
 
-| API | 行為 | 用途 |
-|-----|------|------|
-| `apply(snapshot, animatingDifferences:)` | 比較新舊 snapshot 的 identifier 序列、自動算 insert/delete/move | 結構性變動 |
-| `reconfigureItems([id])` + apply | 重用現有 cell、重跑 cellProvider | 同一 row、內容變動（**首選**） |
-| `reloadItems([id])` + apply | dequeue 全新 cell、重跑 cellProvider | 需要更換 cell type、或需要徹底重建 |
-| `applySnapshotUsingReloadData(_:)` | 等同舊版 `reloadData()`、丟掉所有快取 cell | 整批換成完全不同的資料 |
+| API | Behavior | Use for |
+|-----|----------|---------|
+| `apply(snapshot, animatingDifferences:)` | Diffs old vs new identifier sequences; computes insert/delete/move | Structural changes |
+| `reconfigureItems([id])` + apply | Reuses the existing cell; re-runs cellProvider | Same row, content changed (**preferred**) |
+| `reloadItems([id])` + apply | Dequeues a brand-new cell; re-runs cellProvider | Changing the cell type, or full rebuild needed |
+| `applySnapshotUsingReloadData(_:)` | Equivalent to legacy `reloadData()`; drops all cached cells | Replacing the whole data set |
 
-Apple 官方文件對 `reconfigureItems` 的建議：「choose to reconfigure items instead of reloading items unless you have an explicit need to replace the existing cell with a new cell.」
+Apple's documentation on `reconfigureItems`: "choose to reconfigure items instead of reloading items unless you have an explicit need to replace the existing cell with a new cell."
 
-Apple UIKit team 的 Tyler Fox：
+Apple UIKit engineer Tyler Fox:
+
 > Reload: replaces the existing cell with a new cell.
 > Reconfigure: allows you to directly update the existing cell.
 > Reconfigure preserves existing prepared cells — cached cells which were either prefetched, or already displayed and are waiting to become visible again.
 
-### reconfigureItems 內部行為
+### How reconfigureItems behaves internally
 
-對每筆 id：
-1. 若該 id 對應的 cell 不存在於 collection view 的 prepared cell cache → no-op
-2. 若存在 → 呼叫 cellProvider，但 `dequeueConfiguredReusableCell` 會回傳**同一個現有的 cell** instance（不 dequeue 新的）
-3. 你必須在 cellProvider 內 dequeue 同一個 cell type（相同 registration / reuse identifier）
+For each id:
 
-**前提**：cell type 不變。需要換 cell type 時改用 `reloadItems`。
+1. If no cell for that id exists in the collection view's prepared-cell cache → no-op
+2. If one exists → cellProvider is called, but `dequeueConfiguredReusableCell` returns **the same existing cell** instance (no new dequeue)
+3. The cellProvider must dequeue the same cell type (same registration / reuse identifier)
+
+**Precondition**: the cell type doesn't change. To swap cell types, use `reloadItems`.
 
 ### Downstream Trap: iPadOS Cell Focus Halo
 
@@ -146,23 +152,23 @@ override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
 }
 ```
 
-Keep the default halo only when the list is intentionally focus-driven (external keyboard / trackpad navigation, accessibility focus rings). For a touch-only POS / data-entry app, the halo is redundant chrome the moment the cell has its own `isSelected` visual.
+Keep the default halo only when the list is intentionally focus-driven (external keyboard / trackpad navigation, accessibility focus rings). For a touch-only data-entry app, the halo is redundant chrome the moment the cell has its own `isSelected` visual.
 
 **The trap is bi-directional**: any time you replace `reloadData()` / `reloadItems` with `reconfigureItems` (or the non-diffable `reconfigureRows(at:)`), audit the cell for a custom selection appearance. The old reload path was suppressing the halo as a side effect; the new path no longer does.
 
-## iOS 15 Behavior Change（常考點）
+## iOS 15 Behavior Change
 
-`apply(_:animatingDifferences:)` 的語意在 iOS 15 變了：
+The semantics of `apply(_:animatingDifferences:)` changed in iOS 15:
 
-| 呼叫 | iOS 14 及以前 | iOS 15+ |
-|------|--------------|---------|
-| `apply(snapshot, animatingDifferences: true)` | diff + 動畫 | diff + 動畫 |
-| `apply(snapshot, animatingDifferences: false)` | **等同 `reloadData`**（丟所有 cell） | **diff + 無動畫**（輕量） |
-| 要真正 reloadData | 用上面那行 | **新 API** `applySnapshotUsingReloadData(_:)` |
+| Call | iOS 14 and earlier | iOS 15+ |
+|------|--------------------|---------|
+| `apply(snapshot, animatingDifferences: true)` | diff + animate | diff + animate |
+| `apply(snapshot, animatingDifferences: false)` | **equivalent to `reloadData`** (drops all cells) | **diff without animation** (lightweight) |
+| To actually reloadData | the row above | **new API** `applySnapshotUsingReloadData(_:)` |
 
-升 iOS 15 後的隱性風險：舊 code 用 `animatingDifferences: false` 當「強制全 reload」的 hack，現在會改成 diff——可能曝出原本被 `reloadData` 掩蓋的 cell 重用 bug。
+Hidden risk after raising the deployment target past iOS 15: old code that used `animatingDifferences: false` as a "force full reload" hack now performs a diff instead — which can expose cell-reuse bugs the old `reloadData` was masking.
 
-向下相容的 helper：
+Backward-compatible helper:
 
 ```swift
 extension UICollectionViewDiffableDataSource {
@@ -182,7 +188,7 @@ extension UICollectionViewDiffableDataSource {
 
 ## Background Thread Safety
 
-Snapshot 是 value type（struct），可在 background 組裝：
+Snapshots are value types (structs) and can be assembled off the main thread:
 
 ```swift
 Task.detached {
@@ -193,47 +199,45 @@ Task.detached {
 }
 ```
 
-**但不要混用**：同一個 dataSource 不要時而主緒、時而背景操作。固定一條 thread（最常見是全主緒），或全程透過 actor 序列化。
+**But don't mix**: never drive the same dataSource sometimes from the main thread and sometimes from the background. Pin one thread (usually all-main) or serialize everything through an actor.
 
-## Identifiable 與 Diffable 沒有關係
+## Identifiable Has Nothing to Do with Diffable
 
-`UICollectionViewDiffableDataSource<S, I>` 對 `I` 的約束是 `Hashable`。不需要 `Identifiable`。
+`UICollectionViewDiffableDataSource<S, I>` constrains `I` to `Hashable`. `Identifiable` is not required.
 
-`Identifiable` 是 SwiftUI 用語（`ForEach` 自動讀 `\.id`）。如果同一個 model struct 同時被 UIKit Diffable 與 SwiftUI 使用，可以分開掛 conformance、或用 `ForEach(items, id: \.id)` 避免讓 model 強制 conform `Identifiable`。
+`Identifiable` is SwiftUI vocabulary (`ForEach` reads `\.id` automatically). If one model struct serves both UIKit diffable and SwiftUI, conform separately, or use `ForEach(items, id: \.id)` to avoid forcing `Identifiable` onto the model.
 
 ## Common Mistakes
 
-| 寫法 | 症狀 | 修法 |
-|------|------|------|
-| 把整個 mutable model 當 ItemIdentifierType（synthesized Hashable），內容變動時直接 `apply` | 整 row delete + insert → 閃爍 | 改 `reconfigureItems([newItem])` 保留 cell；或改 Pattern B |
-| 自訂 `Hashable` 只比 id，又把同一 model 給 SwiftUI `ForEach` / `.animation(_:value:)` 用 | SwiftUI 看不到內容變化、UI 不更新 | identity 與 content 分開：Pattern B、或為 SwiftUI 另寫 `Equatable` view-model |
-| `@State var products: [Product]` 接外部資料 | 父層更新 child 看不到 | 改 `let products` 或 `@Binding` |
-| `ForEach(products) { ... }.id(product.id)` | 多餘的 `.id()` 造成 identity churn | 移除 `.id`，靠 `Identifiable` 或 `id: \.id` |
-| `ProductRow: Equatable` 但沒掛 `.equatable()` modifier | 自訂 `==` 不生效、SwiftUI 仍每次重算 body | 在使用處掛 `.equatable()` 或用 `EquatableView { ... }` |
-| 用 `animatingDifferences: false` 想「徹底 reload」 | iOS 15 起變成輕量 diff，原本被 reloadData 掩蓋的 bug 浮現 | 真要 reload 改 `applySnapshotUsingReloadData` |
-| 在 cellProvider 內 `let reg = CellRegistration(...)` | iOS 15+ crash | Registration 提出來當 stored property，見 [cell-registration](cell-registration.md) |
-| 跨 thread 混用同一 dataSource | data race / 動畫錯亂 | 固定主緒，或全程 actor 序列化 |
-| reconfigure 時改 dequeue 不同的 cell type | UIKit assertion | 換 cell type 必須用 `reloadItems`，不是 `reconfigureItems` |
-| 將 reloadData()-based shell 迷入 diffable，`display(_:)` 只呼以 `apply(snapshot)` | id 不變但內容變動的 row（購物車數量、小計、row 內部 view model）静默 stale；diff 看不見變化 | `apply` 前一行 `snapshot.reconfigureItems(snapshot.itemIdentifiers)`，保留與 reloadData() 同謞的 「每次都刷」 contract |
-| `reconfigureItems([id])` 在 selection / setSelected 路徑未先濾掉 snapshot 不存在的 id | iOS 警告 / `NSInternalInconsistencyException` | apply 前 `let known = Set(snap.itemIdentifiers); snap.reconfigureItems(ids.filter { known.contains($0) })` |
+| Pattern | Symptom | Fix |
+|---------|---------|-----|
+| Whole mutable model as ItemIdentifierType (synthesized Hashable), then plain `apply` on content change | Row delete + insert → flicker | Use `reconfigureItems([newItem])` to keep the cell, or switch to Pattern B |
+| Custom `Hashable` comparing only id, model also fed to SwiftUI `ForEach` / `.animation(_:value:)` | SwiftUI can't see content changes, UI doesn't update | Separate identity from content: Pattern B, or a dedicated `Equatable` view-model for SwiftUI |
+| Using `animatingDifferences: false` expecting a full reload | On iOS 15+ it's a lightweight diff; bugs previously masked by reloadData surface | Use `applySnapshotUsingReloadData` when a real reload is intended |
+| Creating `CellRegistration` inside the cellProvider | Crash on iOS 15+ | Hoist the registration to a stored property — see [cell-registration](cell-registration.md) |
+| Driving the same dataSource from multiple threads | Data races / animation glitches | Pin to the main thread, or serialize through an actor |
+| Dequeuing a different cell type during reconfigure | UIKit assertion | Changing cell type requires `reloadItems`, not `reconfigureItems` |
+| Porting a reloadData()-based shell to diffable where `display(_:)` only calls `apply(snapshot)` | Rows whose id is unchanged but content changed (cart quantity, subtotal, row-internal view model) go silently stale — the diff can't see the change | Add `snapshot.reconfigureItems(snapshot.itemIdentifiers)` before `apply`, preserving the old "refresh everything on display" contract |
+| `reconfigureItems([id])` on a selection / setSelected path without filtering ids missing from the snapshot | iOS warning / `NSInternalInconsistencyException` | Before apply: `let known = Set(snap.itemIdentifiers); snap.reconfigureItems(ids.filter { known.contains($0) })` |
 
 ## When to Reach for Diffable
 
-| 場景 | 用 Diffable？ |
-|------|--------------|
-| 多 section、heterogeneous cells、頻繁增刪 | ✅ |
-| Server push 更新、需要動畫過渡 | ✅ |
-| 需要在背景組裝 snapshot | ✅ |
-| 純靜態列表、永不變動 | 用 Diffable 也 OK，但收益低 |
-| 需要極致 scroll 效能、cell 數萬筆 | 改 `UICollectionViewCompositionalLayout` 自己管 data source；Diffable apply 對極大資料集仍會有 diff 成本 |
+| Scenario | Use diffable? |
+|----------|---------------|
+| Multiple sections, heterogeneous cells, frequent inserts/deletes | ✅ |
+| Server-push updates that should animate | ✅ |
+| Snapshot assembly on a background thread | ✅ |
+| Purely static list that never changes | Diffable is fine, but the payoff is small |
+| Extreme scroll performance, tens of thousands of cells | Manage the data source manually under `UICollectionViewCompositionalLayout`; diffable's apply still pays a diff cost on very large data sets |
 
 ## References
 
-- WWDC 2019 Session 220「Advances in UI Data Sources」— Diffable 首次發表，Mountain pattern
-- WWDC 2021 Session 10252「Make Blazing Fast Lists and Collection Views」— `reconfigureItems`、iOS 15 行為變更
-- Apple Developer Forums #126742 — Apple 工程師討論「whole model as identifier」的合法用法
-- Apple docs: [reconfigureItems](https://developer.apple.com/documentation/uikit/nsdiffabledatasourcesnapshot/3804468-reconfigureitems)、[applySnapshotUsingReloadData](https://developer.apple.com/documentation/uikit/uicollectionviewdiffabledatasource/3804470-applysnapshotusingreloaddata)
+- WWDC 2019 Session 220 "Advances in UI Data Sources" — diffable's introduction; the whole-model identifier pattern
+- WWDC 2021 Session 10252 "Make Blazing Fast Lists and Collection Views" — `reconfigureItems`, iOS 15 behavior change
+- Apple Developer Forums #126742 — Apple engineers on the legitimacy of "whole model as identifier"
+- Apple docs: [reconfigureItems](https://developer.apple.com/documentation/uikit/nsdiffabledatasourcesnapshot/3804468-reconfigureitems), [applySnapshotUsingReloadData](https://developer.apple.com/documentation/uikit/uicollectionviewdiffabledatasource/3804470-applysnapshotusingreloaddata)
 
-相關 skill 內條目：
-- [cell-registration](cell-registration.md) — CellRegistration 的搭配寫法、registration 不能放 cellProvider 內
-- [list-composition](list-composition.md) — row/item controller 架構下 Diffable 的位置
+Related references in this skill:
+
+- [cell-registration](cell-registration.md) — CellRegistration pairing rules; registrations must not live inside the cellProvider
+- [list-composition](list-composition.md) — where diffable sits in the row/item controller architecture

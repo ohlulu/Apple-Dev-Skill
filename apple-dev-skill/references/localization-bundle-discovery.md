@@ -29,9 +29,9 @@ framework so feature modules can share keys. The runtime cost is zero
 main bundle ends up with no `.lproj` folders at all.
 
 ```
-DingPOS.app/
+MyApp.app/
 ├── Info.plist                        ← only CFBundleDevelopmentRegion = "en"
-├── DingPOS                            (executable)
+├── MyApp                              (executable)
 └── Frameworks/
     └── Resources.framework/
         ├── en.lproj/Localizable.strings

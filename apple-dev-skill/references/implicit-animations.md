@@ -261,14 +261,12 @@ is innocent. Read both `viewDidLoad`s side-by-side and look for:
 - vs. the cleaner VC binding only after sync setup, OR using only
   async loads (the safe pattern)
 
-This was the path through the actual fix in this codebase: Customer
-detail and Settings detail both used `secondaryNav.setViewControllers
-([detail], animated: false)`. Customer mounted without animation;
-Settings expanded from origin. The single difference was that Settings
-detail VCs (LoyaltyDetailViewController, StoreInfoDetailViewController,
-PaymentMethodsDetailViewController) bound onChange *before* sync
-loadSettings, while Customer bound after. Once spotted, the fix was a
-four-line reorder per VC.
+Illustration: two detail VC families share the same
+`secondaryNav.setViewControllers([detail], animated: false)` swap path.
+Family A mounts without animation; family B expands from origin. The
+single difference: family B bound `onChange` *before* the synchronous
+`loadSettings()`, family A bound after. The fix is a four-line reorder
+per VC — no swap-mechanism change at all.
 
 ## Sub-Layer Resolution Artifacts (iOS 26 regression)
 
@@ -397,37 +395,32 @@ Steps when this triggers (run cheap-first):
    symptom and still be wrong for your codebase. Validate empirically
    (step 1) before adopting any community fix. Adopting an off-target
    fix burns more time than skipping research.
-6. **Instruments → Core Animation profiler** — captures the actual
-   animation keys + durations, telling you WHICH layer is animating
-   WHICH property, not just "something is animating".
+6. **Geometry logging** — log each suspect view's `frame` / `bounds` /
+   `transform` on every layout pass. The numbers tell you WHICH layer
+   is resolving WHICH property; visual inspection can't. (Instruments'
+   Core Animation profiler answers the same question with animation
+   keys + durations — suggest it to the user as a manual step; do not
+   attempt to drive it yourself.)
 7. **Compare across iOS versions** if possible — same code, different
    sim runtime. If iOS 18 doesn't animate and iOS 26 does, it's a
    platform regression; if both animate, it's your code.
 
-### Lessons from the bind-before-load investigation
+### Investigation rules (why the order above is cheap-first)
 
-- **Commit messages aren't ground truth.** A previous commit's stated
-  reason for a refactor can be wrong about WHY it worked even when
-  the refactor itself was correct. Always re-derive the why from the
-  current code, especially when the refactor is one you're considering
-  reverting.
-- **A research-confirmed iOS bug can still be wrong for your symptom.**
-  Darjeeling Steve + StackOverflow Q79844715 both describe real iOS 26
-  swap regressions with real workarounds. Adopting their fix in a
-  codebase that has the same *symptom* but a different *trigger*
-  (synchronous bind-fire vs platform-level layout race) cost half a
-  day. The empty-body test would have caught this in ten minutes.
-- **Cap-vs-uncapped layouts both work or both break the same way.**
-  Tested the hypothesis "max-width centered column is the trigger" by
-  raising the cap from 720pt to 5000pt to disengage it. Animation
-  persisted. One number, one build, hypothesis dead. Always run the
-  decisive cheap experiment before writing the fix.
-
-This whole reference exists because of one session where we stacked 4
-suppression layers before stopping. The bind-before-load section
-exists because of one session where we adopted a research-validated
-iOS 26 fix for a bug that was actually a sequencing error. Don't be
-either session.
+- **Re-derive the "why" from current code, not commit messages.** A
+  commit's stated reason can be wrong about why the change worked even
+  when the change itself was correct. Reverting or extending a refactor
+  based on its message alone risks cargo-culting a misdiagnosis.
+- **A research-confirmed platform bug can still be wrong for your
+  symptom.** Real bugs with real workarounds (blog posts, Stack
+  Overflow) can match your symptom while your trigger is different
+  (e.g. a sequencing error vs a platform layout race). Validate with
+  the empty-body test before adopting any community fix — an off-target
+  fix costs more than the ten-minute experiment.
+- **Run the decisive cheap experiment before writing the fix.** If a
+  hypothesis can be killed by changing one number and rebuilding
+  (e.g. raising a layout cap to disengage it), do that first. One
+  build either kills the hypothesis or promotes it.
 
 ## Mount-State Hygiene Checklist
 
@@ -455,20 +448,12 @@ For any detail VC, sync or async load:
 
 ## iOS Version Notes
 
-| Behavior | iOS 17 | iOS 18 | iOS 26.0–26.1 | iOS 26.2 | iOS 26.4 |
-|----------|--------|--------|---------------|----------|----------|
-| `CAGradientLayer.colors` implicit crossfade | yes | yes | yes | yes | yes |
-| `UISegmentedControl` pill on delta change | yes | yes | yes | yes | yes |
-| `UISwitch.isOn` animates by default | yes | yes | yes | yes | yes |
-| Diffable `apply(_:animatingDifferences:true)` on first empty source animates each row in | yes | yes | yes | yes | yes |
-| `UISplitViewController.setViewController(_:for:)` adds VC view with `.zero` frame (settling artifact) | no | no | **yes** | **yes** | **yes** |
-| `UINavigationController.pushViewController` same `.zero` frame artifact | no | no | **yes** | fixed | fixed |
-| `UISplitViewController` sidebar floats above content (Liquid Glass) | no | no | yes | yes | yes |
-| `primaryBackgroundStyle = .none` removes sidebar background | yes | yes | **no** | no | no |
-| `primaryBackgroundEffect = nil` removes sidebar background | n/a | n/a | yes | yes | yes |
-
-The rows highlighted with **bold yes** / **no** are the deltas worth
-remembering. The rest were stable across the range.
+The behaviors catalogued above are long-standing UIKit/Core Animation
+defaults (`CAGradientLayer.colors` crossfade since iOS 7, segmented
+pill since iOS 13, `UISwitch` thumb since early iOS, diffable
+first-apply insertion animation since introduction). The `.zero`-frame
+settling artifacts are iOS 26 regressions — for the authoritative
+per-version delta table, see `ios-26-behavior-changes.md`.
 
 ## Related References
 

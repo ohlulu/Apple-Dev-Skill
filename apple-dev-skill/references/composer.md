@@ -178,6 +178,17 @@ Composers are easiest to verify through wiring tests:
 - simulate user actions on the composed screen instead of calling adapter internals
 - keep scene composition tests at the scene/root level
 
+## Generation Checklist
+
+Before shipping a new composer or navigation wiring:
+
+- [ ] Composer justified — the screen has ≥2 collaborators, callback wiring, or adapters (otherwise direct init)
+- [ ] No loaders triggered during composition — side effects wait for lifecycle or user action
+- [ ] View hierarchy built inside the screen type, not the composer
+- [ ] Navigation closures carry data out; ≥2 callback parameters → collapsed into one result enum
+- [ ] No retain cycles in closure wiring (weak references where closures point back)
+- [ ] Returned controller is display-ready without further external mutation
+
 ## Warning Signs
 
 The composition boundary is drifting when:

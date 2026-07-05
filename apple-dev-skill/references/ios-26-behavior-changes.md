@@ -1,7 +1,7 @@
 # iOS 26 Behavior Changes — Catalog
 
 Behavior deltas between iOS 18 and iOS 26 (.0 / .1 / .2 / .4) that
-this codebase has tripped on. Each entry links to the deeper
+break previously-correct UIKit code. Each entry links to the deeper
 reference where it's discussed; this file is the consolidated index.
 
 iOS 25 was never released — Apple jumped from iOS 18 (2024) to iOS 26
@@ -161,20 +161,18 @@ When you suspect an iOS 26 regression:
    -downloadPlatform iOS` or via Xcode → Settings → Components.
    ~7GB / ~30 min. Provides a real A/B test.
 
-## Reference Implementations
+## Adoption Shape
 
-Code in DingPOS that adopts the iOS 26 fixes:
+A codebase that has adopted all the iOS 26 fixes typically carries:
 
-- `DingKit/Sources/DingKitiOS/Navigation/UISplitViewController+Affordances.swift`
-  — `setViewControllerWithoutAnimation` wrapper with the
-  `layoutIfNeeded` fix
-- `DingKit/Sources/DingKitiOS/Navigation/SecondaryColumnHost.swift`
-  — host wrapper for animated push inside secondary
-- `DingKit/Sources/DingKitiOS/SubscriptionFeature/SubscriptionViewController.swift`
-  → `GradientStatusCardView.init` — layer-actions suppression on the
-  gradient
-- `DingKit/Sources/DingKitiOS/SubscriptionFeature/SubscriptionViewController.swift`
-  → `viewDidLoad` calls `applyState()` before async load —
-  mount-state seeding
-- `App/Sources/Composers/SettingsComposer.swift` — VM pre-warm
-  pattern for subscription status
+- a `setViewControllerWithoutAnimation` extension on
+  `UISplitViewController` (with the post-swap `layoutIfNeeded` — see
+  `split-view-controller.md`)
+- a secondary-column host wrapper VC for animated pushes inside the
+  secondary column
+- `layer.actions = [… NSNull()]` suppression on decorative gradient /
+  status layers (see `implicit-animations.md`)
+- detail VCs that call `applyState()` from current VM state in
+  `viewDidLoad` before any async load fires (mount-state seeding)
+- composers that pre-warm view models so state is usually loaded
+  before the user arrives

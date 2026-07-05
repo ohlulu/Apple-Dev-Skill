@@ -542,30 +542,13 @@ Fix the wrapper at two points:
 
 Why `AnyHashable(id)` inside the conformance: `any Hashable` (existential) is not itself directly Hashable in the type system — `AnyHashable` is the type-erased box that IS Hashable. Hashing through `AnyHashable` is a one-line cost and produces the same value as the underlying type's own hash.
 
-**Subtle Swift 6 trap**: inlining `AnyHashable(id)` inside a larger expression (e.g. `hasher.combine(AnyHashable(id))` or `AnyHashable(lhs.id) == AnyHashable(rhs.id)`) suppresses SE-0352 implicit existential opening, producing:
-
-```
-error: type 'any Hashable & Sendable' cannot conform to 'Hashable'
-note: only concrete types such as structs, enums and classes can conform to protocols
-```
-
-Fix: bind the existential to a `let` first, then use the binding:
+**Older-toolchain fallback**: on current toolchains (verified compiling on Swift 6.3 with `-strict-concurrency=complete` and MainActor default isolation), inlining `AnyHashable(id)` inside a larger expression works fine. Earlier Swift 6 compilers could reject it with `error: type 'any Hashable & Sendable' cannot conform to 'Hashable'` because the outer call suppressed SE-0352 implicit existential opening. If you hit that error, bind the existential to a `let` first:
 
 ```swift
-// Wrong — implicit opening blocked by outer call
-hasher.combine(AnyHashable(id))                 // ❌
-AnyHashable(lhs.id) == AnyHashable(rhs.id)      // ❌
-
-// Right — binding lets Swift open the existential
+// Fallback for older Swift 6 toolchains only
 let id = AnyHashable(self.id)
-hasher.combine(id)                              // ✅
-
-let lhsId = AnyHashable(lhs.id)
-let rhsId = AnyHashable(rhs.id)
-return lhsId == rhsId                           // ✅
+hasher.combine(id)
 ```
-
-This pattern was crystallised by Essential Developer in their feed case study; the wrapper has been battle-tested across several production codebases under Swift 6 strict concurrency.
 
 ```swift
 // Production-ready Swift 6 CellController

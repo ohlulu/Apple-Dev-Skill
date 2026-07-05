@@ -110,9 +110,9 @@ Run all seven before declaring done. The implementation can look correct and sti
 - [ ] **Close button**: tap X — dismiss animator runs (snapshot grows in reverse from preview to source), backdrop fades, source visible again.
 - [ ] **Source restoration**: after every dismiss path (close button, pan commit, pan-cancel-then-close) — source view's `alpha == 1` in the original screen. Open + dismiss 5× in a row; check the view debugger for orphan snapshots or duplicate transitioning delegate retained.
 
-Fail any check → hit the matching trap in the Hard-Won Facts or the Anti-Pattern Table below.
+Fail any check → hit the matching trap in Facts & Mechanisms or the Anti-Pattern Table below.
 
-## Hard-Won Facts
+## Facts & Mechanisms
 
 ### Fact 1: `modalPresentationStyle = .overFullScreen`, never `.custom`
 
@@ -125,11 +125,11 @@ Also set `modalPresentationCapturesStatusBarAppearance = true` so the viewer's s
 
 ### Fact 2: Centring a Zoom-Target Image — Use `contentInset`, NOT Manual `center` / `frame.origin`
 
-Centring a zoom-target image in `UIScrollView` is one of the most-bugged patterns in UIKit. Multiple instrumentation runs confirmed:
+Centring a zoom-target image in `UIScrollView` is one of the most-bugged patterns in UIKit. Two mechanisms cause it:
 
 **Trap A — writing `frame` under a non-identity transform inflates `bounds`.**
 
-`UIScrollView` applies `CGAffineTransform(scaleX: zoomScale, y: zoomScale)` to the zoom view. UIView's documented contract: *"If the transform property is not the identity transform, the value of the frame property is undefined and should not be modified."* Empirical behavior on iOS 17–26: UIKit back-translates the requested `frame.size` through the transform and inflates `bounds.size` to compensate.
+`UIScrollView` applies `CGAffineTransform(scaleX: zoomScale, y: zoomScale)` to the zoom view. UIView's documented contract: *"If the transform property is not the identity transform, the value of the frame property is undefined and should not be modified."* Observed behavior on iOS 17–26: UIKit back-translates the requested `frame.size` through the transform and inflates `bounds.size` to compensate.
 
 ```
 Before: imageView.bounds.size = (1536, 1536), transform.a = 0.262
@@ -142,7 +142,7 @@ After:  imageView.frame = CGRect(.zero, size: 1536x1536)
 
 **Trap B — `UIScrollView.layoutSubviews()` resets the zoom view's origin to (0, 0) on every layout pass.**
 
-UIScrollView assumes its zoom view sits at content origin (0, 0). Any manual `previewImageView.center = …` survives at most one frame before the next layout pass undoes it. Instrumentation captured `center = (201, 437)` getting reset to `(201, 201)` between two consecutive `viewDidLayoutSubviews` calls with no application code running in between.
+UIScrollView assumes its zoom view sits at content origin (0, 0). Any manual `previewImageView.center = …` survives at most one frame before the next layout pass undoes it — geometry logging shows a manually-set `center = (201, 437)` reset to `(201, 201)` between two consecutive `viewDidLayoutSubviews` calls with no application code running in between.
 
 **The fix — work *with* `UIScrollView` instead of against it:**
 

@@ -155,7 +155,8 @@ Replace `navigationItem.searchController` with a custom `UIView` (a search-pill 
 
 ```swift
 private lazy var searchField: SearchPillTextField = {
-  let field = SearchPillTextField(placeholder: L10n.tr("products.search_placeholder"))
+  // SearchPillTextField stands for your app's custom search-field component.
+  let field = SearchPillTextField(placeholder: String(localized: "products.search_placeholder"))
   field.translatesAutoresizingMaskIntoConstraints = false
   field.onChange = { [weak self] text in self?.viewModel.updateSearchText(text) }
   return field

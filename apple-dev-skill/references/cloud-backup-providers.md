@@ -86,7 +86,7 @@ let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
 if http.statusCode == 403, body.contains("insufficientScopes") {
     tokenStore.delete(forKey: keychainAccessToken)
     tokenStore.delete(forKey: keychainRefreshToken)   // refresh keeps old scopes — must drop it too
-    throw SottoError.providerNotAuthorized
+    throw BackupError.providerNotAuthorized
 }
 ```
 
@@ -314,7 +314,7 @@ corrupted). Harden the restore swap:
 // Path-traversal guard before any download/swap:
 for name in manifest.mediaFilenames {
     guard name == (name as NSString).lastPathComponent, !name.contains("/") else {
-        throw SottoError.backupFailed("Illegal media filename in manifest: \(name)")
+        throw BackupError.restoreFailed("Illegal media filename in manifest: \(name)")
     }
 }
 ```

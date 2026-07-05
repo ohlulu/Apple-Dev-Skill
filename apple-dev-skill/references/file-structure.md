@@ -236,7 +236,7 @@ UI properties should use the **simplest initializer form that keeps the code obv
 Use direct initialization when a single expression is enough:
 
 ```swift
-lazy var subtotalRow: SummaryRow = SummaryRow(label: L10n.tr("cashier.subtotal"))
+lazy var subtotalRow: SummaryRow = SummaryRow(label: String(localized: "cashier.subtotal"))
 ```
 
 Use **`lazy var` with a closure** only when inline configuration needs multiple statements:
@@ -285,3 +285,15 @@ Within any scope (main declaration or extension), order members by access level:
 ```
 
 This structure applies uniformly to `UIViewController`, `UIView`, `UITableViewCell`, `UICollectionViewCell`, and other UIKit subclasses. Type-specific lifecycle methods (`viewDidLoad`, `layoutSubviews`, `prepareForReuse`) sit in the lifecycle section of the main declaration.
+
+## Generation Checklist
+
+Before shipping a new UIKit subclass file:
+
+- [ ] Main declaration contains only conformance list, properties (public → internal → private), and lifecycle methods
+- [ ] Each protocol implementation lives in its own extension; conformances declared on the class line
+- [ ] `@objc` actions grouped in one `private extension` (`// MARK: - Actions`)
+- [ ] Layout (`setupUI()` — hierarchy + constraints) is the LAST `private extension` in the file
+- [ ] UI properties use the simplest initializer form; closure form only for multi-statement config; no `[weak self]` in lazy closures
+- [ ] Cells lay out against `contentView`; `prepareForReuse` resets reused state
+- [ ] MARK anchors present so offset-based reads land on the right section

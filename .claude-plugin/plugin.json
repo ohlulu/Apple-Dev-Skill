@@ -1,6 +1,6 @@
 {
   "name": "apple-dev",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Apple platform development: UIKit patterns, Xcode/Tuist project setup, xcconfig, build phases, Makefile, and Swift coding conventions for app development.",
   "author": {
     "name": "ohlulu"

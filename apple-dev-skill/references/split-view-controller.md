@@ -39,7 +39,7 @@ iOS automatically inset `safeAreaLayoutGuide` past the master overlay. No manual
 | Call `split.setViewController(_, for: .primary)` before `.secondary` | Yes | Standard ordering. |
 | Set an initial secondary VC (real or placeholder) **before returning the split** | Yes | If secondary is `nil` when the split first appears, iOS commits to a single-column sidebar layout for that lifetime. Setting secondary lazily from `viewDidLoad` is too late. |
 | `preferredSplitBehavior = .tile` | Optional | Honored on iOS 18 and earlier; ignored on iOS 26. Set it anyway as documentation of intent. |
-| `applyColumnAffordancePolicy()` (project helper) | Yes (regular size class) | Suppresses the auto-inserted column toggle button + edge swipe on iPad full-screen; restores them on compact for accessibility. |
+| Column affordance policy (if the design hides the toggle) | Optional (regular size class) | If the design calls for it, suppress the auto-inserted column toggle button + edge swipe on iPad full-screen via `presentsWithGesture` / hiding the leading bar button; restore them on compact for accessibility. |
 
 ## Anti-Patterns
 
@@ -89,7 +89,7 @@ private final class SecondaryColumnHost: UIViewController {
     // Match the page background so any uncovered strip (status-bar
     // band when the inner nav bar is hidden) reads as the page
     // surface, not systemBackground white.
-    view.backgroundColor = Color.neutral50
+    view.backgroundColor = .pageBackground  // your app's page background token
 
     addChild(content)
     content.view.translatesAutoresizingMaskIntoConstraints = false
@@ -164,8 +164,8 @@ Apple shipped a partial fix in **iOS 26.2 for the
 `pushViewController` path**
 (https://darjeelingsteve.com/articles/Fixing-UINavigationController-Push-Animation-Layout-Issues-on-iOS-26.html).
 The **`setViewController(_:for:)` path is still affected as of
-26.4** — same underlying mechanism, different entry point.
-(Verified empirically on a DingPOS sim.)
+26.4** — same underlying mechanism, different entry point
+(verified empirically on simulator).
 
 ### Fix
 
@@ -217,23 +217,15 @@ ask for.
 
 ### Pitfall: Symptom-Suppression Doesn't Cure the Cause
 
-It is tempting (and was the first instinct on this codebase) to
-stack symptom-suppression layers when each new sub-animation
-appears — `CATransaction.setDisableActions(true)` around the swap,
-`removeAllAnimations` sweeps after commit, wrapping every detail
-VC's state-update method in another `CATransaction.disableActions`.
-Each of these visually hides the symptom but leaves the underlying
-zero-frame Auto Layout pass running.
-
-If you find yourself adding suppression layer N+1, the prior layer
-N was probably a workaround. Stop, profile, find the real cause.
-For this case the real cause is one Auto Layout pass against a
-`.zero` frame; one `viewController.view.layoutIfNeeded()` after the
-swap solves it cleanly.
-
-Keep the symptom-suppression history in your back pocket only as
-*evidence of debugging effort* for future bugs that look similar
-but are actually different.
+Do not stack suppression layers (`CATransaction.setDisableActions`,
+`removeAllAnimations` sweeps, per-VC `disableActions` wraps) as each
+new sub-animation appears — each layer hides one symptom while the
+underlying zero-frame Auto Layout pass keeps running and surfaces
+through the next sub-layer. The real cause is one layout pass against
+a `.zero` frame; one `viewController.view.layoutIfNeeded()` after the
+swap replaces every suppression layer. If you're about to add
+suppression layer N+1, layer N was probably already a workaround —
+stop and apply the layout fix instead.
 
 ### Don't Stop at the VC Swap — Audit the Detail's Initial Apply Too
 
@@ -298,41 +290,16 @@ suppression needed.
 ### Sync State Loads During Mount (Bind-Before-Load Trap)
 
 The more dangerous sibling, and the one that masquerades as the
-iOS 26 `.zero`-frame regression. A *synchronous* `viewModel.load()`
-call fires `onChange` **before returning**, while still inside
-`viewDidLoad`. If the bind callback runs `UIView.animate { ... }`
-(common via a `refreshDirtyState(animated: true)` or similar), the
-animation block captures the still-`.zero` view frame as its "from"
-state. When bounds resolve during the appearance window UIKit
-interpolates from `.zero` → real for every subview — indistinguishable
-from the iOS 26 layout regression by eye.
+iOS 26 `.zero`-frame regression: a *synchronous* `viewModel.load()`
+that fires `onChange` inside `viewDidLoad`, whose bind callback runs
+`UIView.animate` while the view frame is still `.zero`. Symptom is
+identical by eye (expand-from-origin on mount) but the iOS 26 swap
+fix doesn't help, and a sibling detail VC on the same swap path that
+binds *after* loading won't animate.
 
-**Symptom**: every Settings detail VC mounts with an expand-from-origin
-animation, but adopting the iOS 26 swap-layout fix doesn't help.
-
-**Telltale**: a sibling detail VC mounted via the same swap path (e.g.
-`CustomerDetailViewController` in this codebase) doesn't animate. The
-iOS 26 platform bug would affect both equally; this one only affects
-VCs whose viewDidLoad fires a sync bind callback into UIView.animate.
-
-**Diagnostic**: empty-body test — see `implicit-animations.md` →
-"Bind-Before-Load: The Sync-Fire Trap" → "Diagnostic".
-
-**Fix**: reorder `viewDidLoad` so `bind()` runs *after* the initial
-load + sync, never before. The first `onChange` fire is then a real
-user mutation post-mount, when animation is what the author intended.
-
-```swift
-// Wrong (the trap)
-bindViewModel()
-viewModel.loadSettings()     // sync → fires onChange now
-syncFieldsFromDraft()
-
-// Right
-viewModel.loadSettings()
-syncFieldsFromDraft()
-bindViewModel()              // first onChange = real user edit
-```
+**Canonical treatment** — full mechanism, empty-body diagnostic, and
+the `load → sync → bind` reorder fix: `implicit-animations.md` →
+"Bind-Before-Load: The Sync-Fire Trap".
 
 This is independent of — and orthogonal to — the iOS 26 swap-layout
 fix above. Both can exist in the same codebase; both must be fixed
@@ -357,7 +324,7 @@ actions on the whole view tree.
 
 ### Why the Host bg Must Match the Page bg
 
-The host's default `view.backgroundColor` is `systemBackground` (white in light mode). When the inner nav bar is hidden (e.g. dashboard-style detail pages), the strip under the status bar isn't always fully painted by the inner content, and the host's white bleeds through as a band across the top of the secondary pane. Always tint the host to match the detail page's bg token (typically `neutral-50`).
+The host's default `view.backgroundColor` is `systemBackground` (white in light mode). When the inner nav bar is hidden (e.g. dashboard-style detail pages), the strip under the status bar isn't always fully painted by the inner content, and the host's white bleeds through as a band across the top of the secondary pane. Always tint the host to match the detail page's background token (a light neutral in most designs).
 
 ## Diagnostic
 
@@ -369,7 +336,14 @@ axe describe-ui --udid <UDID>
 
 If a card or scroll view inside the detail reports `width: 949` (or whatever ≈ full screen width) instead of `≈ secondary column width`, the detail is anchored to `view.leadingAnchor` instead of the safe-area guide. Frame data is more diagnostic than screenshots here — the screenshot only shows the visible portion, the frame dump reveals the actual extent.
 
-## Reference Implementations
+## Generation Checklist
 
-- **Static safe-area pinning**: `CustomerDetailViewController` / `OrderDetailViewController` `setupScroll()` — pin the scroll view to `safeAreaLayoutGuide` for leading/trailing. Copy this for any new detail VC.
-- **Push-transition host wrapper**: `CustomerComposer.SecondaryColumnHost` — wrap the secondary nav whenever the detail flow uses animated `pushViewController` inside the secondary column.
+When composing or modifying an iOS 26 split view:
+
+- [ ] Primary wrapped in `UINavigationController`; secondary set before the split first appears
+- [ ] Every detail VC pins scrollable content to `safeAreaLayoutGuide.leading/trailing`
+- [ ] Secondary hosting a nav controller with animated pushes → host VC wrapper in place
+- [ ] Sidebar-row detail swaps go through `setViewControllerWithoutAnimation` (with post-swap `layoutIfNeeded()`)
+- [ ] First diffable apply after mount is non-animated (gate on existing snapshot content)
+- [ ] `viewDidLoad` order is `setupUI → load → sync → bind` for any VC with a synchronous load
+- [ ] Host wrapper background matches the detail page background token

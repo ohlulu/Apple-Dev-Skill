@@ -85,7 +85,7 @@ XcodeProj-based integration now only adds overhead:
 2. Change dependency references from `.external(name: "X")` to `.package(product: "X")`
 3. Clear stale state:
    ```bash
-   rm -rf Sotto.xcworkspace/xcshareddata/swiftpm
+   rm -rf MyApp.xcworkspace/xcshareddata/swiftpm
    tuist clean
    tuist install
    tuist generate

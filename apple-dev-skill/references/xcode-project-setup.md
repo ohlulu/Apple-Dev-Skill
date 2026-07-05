@@ -426,10 +426,8 @@ Quick reference for common Xcode/Tuist pitfalls:
 | AI-generated app icon has baked-in rounded corners | Always prompt "full-bleed square, no rounded corners/shadow/padding" — iOS applies its own mask |
 | `ASSETCATALOG_COMPILER_APPICON_NAME` set in xcconfig ignored | pbxproj overrides xcconfig; set per-config in Tuist target settings instead |
 | `print()` invisible in `log show` / `log stream` / Console.app | `print()` writes to stdout only — not Unified Logging. Use `Logger` (iOS 14+) or `os_log` for logs capturable outside Xcode. See `systematic-debugging` skill for details |
-
 | Tuist XcodeProj-based SPM + binary xcframework → `libtool: 'dummy.o' has no symbols` | Use Xcode native integration (`.remote()` in `Project.swift`) for binary xcframework packages. See [tuist-spm-integration.md](tuist-spm-integration.md) |
 | `git commit -- <files>` (pathspec commit) + pre-commit hook `git add` → ghost staged/unstaged diffs | Pathspec commit uses a temporary index; after commit it restores the real index to its pre-commit snapshot, discarding any `git add` the hook performed. Result: HEAD and working tree match, but the index retains stale pre-hook content → phantom staged+unstaged diffs that cancel out. Fix: use `git commit` (index commit) after explicit `git add`; never `git commit -- <files>` when a pre-commit hook calls `git add` |
-
 | `make build` shows zero warnings but Xcode IDE shows many | CLI and IDE use different DerivedData. `make build` pipes output and may strip diagnostics. Use `make warnings` (clean build with Xcode DerivedData) to see all warnings. Fix: after any task completion, run `make warnings` if the project has the target |
 | `contentEdgeInsets` deprecated warning (iOS 15+) | Replace with `UIButton.Configuration.contentInsets` (`NSDirectionalEdgeInsets`) |
 | `NSMetadataQuery` / `NSObjectProtocol` captured in `@Sendable` closure | If access is serialized on main queue (`.main` notification queue + `@MainActor` task), use `nonisolated(unsafe)` on captured vars |
