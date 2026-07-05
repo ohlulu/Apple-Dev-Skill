@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.7.0] — 2026-07-05
+
+- Added `diffable-data-source` reference — diffable as the default data source, `Hashable`-not-`Identifiable` constraint, two Apple-blessed identifier patterns, `reconfigureItems` vs `reloadItems` vs `apply`, iOS 15 `animatingDifferences` semantic change, Swift 6 `Sendable` section/item identifier patterns, iPadOS cell focus-halo migration trap.
+- Added `cloud-backup-providers` reference — provider-agnostic backup architecture for Google Drive / Dropbox / iCloud: user-visible storage as the iron law, OAuth scope-expansion 403 re-consent, atomic pointer publish with millisecond version ids, pointer namespaces for breaking bundle formats, storage-location migration hook, restore-integrity hardening, dedicated ephemeral transfer session with URLCache disabled, bounded POST retry, upload stall detection.
+- Rewrote the skill as a forward-looking guidance manual:
+  - Fixed factual error — `UITableView.CellRegistration` does not exist; documented the UITableView generic-helper alternative.
+  - Resolved internal contradictions — animation tier table legitimizes spring for choreography; MARK rules aligned between `swift-style` and `file-structure`; `AnyHashable` inline conformance verified compiling on Swift 6.3 and the old warning demoted to an older-toolchain fallback.
+  - Converted war-story narratives to design rules with mechanisms; genericized private project symbols and dead links.
+  - Slimmed Topic Router rows to ≤2 sentences; deduplicated the iOS 26 version table and bind-before-load trap to canonical homes.
+  - Added generation checklists to `animation`, `swift-style`, `composer`, `file-structure`, `split-view-controller`.
+  - Expanded the mockup loop into a universal UI Verification Definition of Done; added a precedence conflict table; replaced Instruments steps with agent-executable diagnostics.
+  - Rewrote `diffable-data-source` in English.
+- Documented iOS 26 `UISearchController` prescription — custom search-field tint requires hosting a custom search pill in the root view.
+- Documented Tuist `.recommended` `defaultSettings` injecting target-level `SWIFT_VERSION = 5.0` that silently shadows project-xcconfig Swift 6, with the `recommended(excluding:)` fix.
+- Added `systematic-debugging` cross-trigger and screenshot-evidence verification loop to SKILL.md.
+
 ## [0.6.0] — 2026-06-09
 
 - **Breaking**: Renamed skill from `uikit-expert-skill` to `apple-dev-skill`.
