@@ -28,7 +28,7 @@ All `xc-*.sh` scripts (`xc-build.sh`, `xc-build-run.sh`, `xc-test.sh`) must shar
 
 ## Also Include
 
-- `CODE_SIGNING_ALLOWED=NO` — prevents signing errors from masking real build failures in CI and local scripts
+- `CODE_SIGNING_ALLOWED=NO` — prevents signing errors from masking real build failures in CI and local scripts. **Compile-check and test targets only — never on a build that gets installed** (`simctl install`, run targets). The flag skips even ad-hoc signing, so the binary ships without an `application-identifier` entitlement and simulator securityd rejects every Keychain call with `-34018 errSecMissingEntitlement`: token loads return nil ("not connected" despite a valid stored session) and saves fail silently after a successful OAuth exchange. Simulator ad-hoc signing needs no identity or account — there is no reason to disable it on an installable build.
 - Consistent `XC_CONFIG` — all scripts should source the same `xc-env.sh` for scheme, destination, and configuration
 
 ## xcodebuild test: Crash Detection
