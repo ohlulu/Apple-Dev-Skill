@@ -42,6 +42,7 @@ Key rules:
 - Use `booted` as the device target — avoids needing to know the exact UDID
 - If multiple simulators are booted, `booted` picks the first one; shut down extras or target by UDID
 - `make run` is the single command agents and developers should use — no manual `simctl` sequences
+- The `build` target that `run` installs from **must stay signed** — never pass `CODE_SIGNING_ALLOWED=NO` on it. That flag skips even ad-hoc signing, so the installed app has no `application-identifier` entitlement and simulator securityd rejects every Keychain call with `-34018`: stored credentials read as nil and new ones silently fail to save. Simulator ad-hoc signing needs no identity, so the flag buys nothing here — reserve it for compile-check / CI targets whose product is never installed
 
 ## Warnings Target
 
