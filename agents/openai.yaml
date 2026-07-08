@@ -1,5 +1,5 @@
 name: apple-dev
-version: "0.7.0"
+version: "0.8.0"
 description: >-
   Apple platform development: UIKit patterns, Xcode/Tuist project setup,
   xcconfig, build phases, Makefile, and Swift coding conventions for app

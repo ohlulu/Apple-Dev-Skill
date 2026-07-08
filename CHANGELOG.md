@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.0] — 2026-07-08
+
+- Added `photo-picker` reference — `PHPickerViewController` vs deprecated `UIImagePickerController` library mode (~2× slower to present, every time, and requires photo permission PHPicker doesn't need), camera-mode exception, background-queue delegate callback trap, load-failure vs remove-image contract.
+- Disambiguated overlapping Topic Router row families — animation (`animation` / `implicit-animations` / `compound-cell-row-animation`), testing (`testing-principles` / `testing`), sizing (`self-sizing` / `step-transition-sizing` / `popover-tooltip`): each row now carries a scope discriminator and NOT-for cross-pointers; added a family rule requiring boundary declarations on both parent and child rows.
+- Expanded `cloud-backup-providers` — remote-status display (list authority, stale-while-revalidate, display cache), advisory contents manifest, cache invalidation and manifest stale-drop honoring list authority and upload failure.
+- Documented `composer` idempotent bootstrap rule for recreated detail controllers.
+- Documented signing rules for installable builds — `makefile` run-installed builds must stay signed (keychain `-34018`), and `xcodebuild-error-detection` `CODE_SIGNING_ALLOWED=NO` must never touch installable builds.
+
 ## [0.7.0] — 2026-07-05
 
 - Added `diffable-data-source` reference — diffable as the default data source, `Hashable`-not-`Identifiable` constraint, two Apple-blessed identifier patterns, `reconfigureItems` vs `reloadItems` vs `apply`, iOS 15 `animatingDifferences` semantic change, Swift 6 `Sendable` section/item identifier patterns, iPadOS cell focus-halo migration trap.
