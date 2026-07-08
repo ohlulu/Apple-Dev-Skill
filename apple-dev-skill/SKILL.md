@@ -91,15 +91,17 @@ repeated user corrections.
 
 Consult the reference file for each topic relevant to the current task. Apply all rules from the matched references — do not skip them for convenience.
 
+Family rule: when a reference is a special case of another, both router rows must state the boundary — the parent row lists its special-case children (→ links), and the child row names the parent and its NOT-for scope. A reference joining a family must also declare the same boundary in its own "When to Apply / Not for" section.
+
 ### UIKit / UI Patterns
 
 | Topic | Reference |
 |-------|-----------|
 | File structure for UIKit subclasses. Property ordering, extension-per-responsibility, layout section placement for UIViewController / UIView / cells. | [file-structure](references/file-structure.md) |
-| Animation defaults and choreography. Linear-fade defaults, sanctioned spring choreography for expand/collapse and entrances, custom-layout height animation pitfalls. | [animation](references/animation.md) |
+| Animation defaults and choreography — linear-fade defaults, spring expand/collapse choreography, custom-layout height animation, text expand/collapse, staggered entrance. NOT for motion with no authored animate block (→ implicit-animations) nor compound-cell row insert/remove (→ compound-cell-row-animation). | [animation](references/animation.md) |
 | Zoomable image preview (IG / Photos.app-style tap-to-enlarge viewer). Hero grow transition, pinch zoom, follow-finger pan dismiss — covers UIScrollView centring traps, presentation-style requirements, and gesture coexistence. | [zoomable-image-preview](references/zoomable-image-preview.md) |
-| Implicit animations — CALayer/UIKit animations that fire WITHOUT a UIView.animate block. Catalog + disable-at-source recipes, bind-before-load sync-fire trap, symptom-stacking diagnostic. | [implicit-animations](references/implicit-animations.md) |
-| Compound cell row animation — animating row insert/remove inside a settings-style compound card cell. UISwitch distortion trap, performBatchUpdates vs invalidateLayout. | [compound-cell-row-animation](references/compound-cell-row-animation.md) |
+| Implicit animations — motion firing WITHOUT any UIView.animate block you wrote: layer-property assignment, control state re-animation, layout-pass animations. Catalog + disable-at-source recipes, bind-before-load sync-fire trap, symptom-stacking diagnostic. Start here when "something animates but there is no animate {} to grep". | [implicit-animations](references/implicit-animations.md) |
+| Compound cell row animation — special case of animation.md: animating row insert/remove inside a settings-style compound card cell. UISwitch distortion trap, performBatchUpdates vs invalidateLayout. Read animation.md first for defaults. | [compound-cell-row-animation](references/compound-cell-row-animation.md) |
 | Cell registration. CellRegistration vs legacy register/dequeue, handler lifecycle, retain cycles, dynamic cell types. | [cell-registration](references/cell-registration.md) |
 | Diffable data source. Hashable-not-Identifiable constraint, two identifier patterns, reconfigureItems as the content-update channel, iOS 15 semantic changes, cross-framework sharing mistakes. | [diffable-data-source](references/diffable-data-source.md) |
 | List composition — heterogeneous cells, row/item controllers, section controllers, pagination seam, dispatch contract. Includes sectionHeaderTopPadding and sticky-header gotchas. | [list-composition](references/list-composition.md) |
@@ -107,8 +109,8 @@ Consult the reference file for each topic relevant to the current task. Apply al
 | UISplitViewController on iOS 26. The primary column floats as an overlay over a full-width secondary — layout pinning, push-transition host wrapper, and detail-swap fixes. Read before any iPad master-detail work targeting iOS 26. | [split-view-controller](references/split-view-controller.md) |
 | iOS 26 behavior changes catalog. Consolidated index of iOS 18 → 26 deltas with links to the deep references, what did NOT change, and the diagnostic workflow for suspected regressions. | [ios-26-behavior-changes](references/ios-26-behavior-changes.md) |
 | Image resizing. API decision matrix (renderer vs thumbnail vs ImageIO downsampling), display vs encode paths, template icon sizing. | [image-resizing](references/image-resizing.md) |
-| Self-sizing. systemLayoutSizeFitting, preferredContentSize, self-sizing cells, complete constraint chains, auto-resize-on-layout-pass trap. | [self-sizing](references/self-sizing.md) |
-| Step transition sizing — wizard / multi-step card swapping children of different heights. Explicit container height + measurement + snapshot-and-reparent of the outgoing child. | [step-transition-sizing](references/step-transition-sizing.md) |
+| Self-sizing — measuring one view's natural size: systemLayoutSizeFitting, generic modal/sheet/popover preferredContentSize, self-sizing cells, complete constraint chains, auto-resize-on-layout-pass trap. NOT for container height during animated multi-step child swaps (→ step-transition-sizing) nor lightweight tooltip popovers with arrow/safe-area chrome (→ popover-tooltip). | [self-sizing](references/self-sizing.md) |
+| Step transition sizing — wizard / multi-step card swapping children of different heights: explicit container height + measurement + snapshot-and-reparent of the outgoing child. NOT for single-view height animation (→ animation.md) nor modal/popover sizing (→ self-sizing.md). | [step-transition-sizing](references/step-transition-sizing.md) |
 | Vertical alignment. centerY vs baseline decision, manual-frame container limitations, measuring real control heights instead of arithmetic. | [alignment](references/alignment.md) |
 | UIButton.Configuration. Configuration vs legacy API are mutually exclusive rendering paths; titleTextAttributesTransformer, silent override trap. | [uibutton-configuration](references/uibutton-configuration.md) |
 | UIButton icon badge — small circular icon overlay. `.custom` type + icon as subview, manual highlight. | [uibutton-icon-badge](references/uibutton-icon-badge.md) |
@@ -122,8 +124,8 @@ Consult the reference file for each topic relevant to the current task. Apply al
 | Localization bundle discovery. Framework-only `.lproj` hides the Settings language picker; declare `CFBundleLocalizations` + `CFBundleAllowMixedLocalizations` in the app's Info.plist. | [localization-bundle-discovery](references/localization-bundle-discovery.md) |
 | Auto Layout spacing and distribution. setCustomSpacing, why CSS-flex spacers don't translate, independent top/bottom pinning, flexible gap strategies. | [autolayout-spacing](references/autolayout-spacing.md) |
 | Navigation bar appearance. Appearance slots, iOS 26 backgroundColor breaking change, large-title scroll tracking. On iOS 26, custom search-field tint requires leaving UISearchController. | [navigation-bar-appearance](references/navigation-bar-appearance.md) |
-| Testing principles. Test levels, async spies, assertion strategy, memory leak tracking. | [testing-principles](references/testing-principles.md) |
-| UIKit testing. Lifecycle simulation, semantic list helpers, reuse/visibility tests, pagination integration tests. | [testing](references/testing.md) |
+| Testing principles — the what/why layer: test levels, async spy design, assertion strategy, memory leak tracking. Framework-agnostic; pair with testing.md for UIKit mechanics. | [testing-principles](references/testing-principles.md) |
+| UIKit testing — the how layer: lifecycle simulation, semantic list helpers, reuse/visibility tests, pagination integration tests. Pair with testing-principles.md for level and assertion decisions. | [testing](references/testing.md) |
 | Eliminating objc_setAssociatedObject. UIAction closures, subclass stored properties, wrapper views — plus the downstream traps each replacement introduces. | [associated-objects](references/associated-objects.md) |
 | UIViewRepresentable bridge. Two golden rules (defer UIKit→SwiftUI state async; diff instead of reset in updateUIView), coordinator callbacks, pre-rendered bitmaps, Swift 6 delegate isolation. | [uiview-representable](references/uiview-representable.md) |
 | iCloud ubiquity container. NSMetadataQuery discovery, bulk download with progress-based timeouts, upload-confirmation polling with fresh URLs, Files-app visibility, fresh-install restore. | [icloud-ubiquity](references/icloud-ubiquity.md) |
