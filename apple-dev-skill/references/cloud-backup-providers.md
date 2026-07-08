@@ -357,7 +357,10 @@ revalidate-on-appearance, so the cache needs no expiry — it is
 invalidated by events that actually change the answer:
 
 - new applied `.found` → overwrite
-- listing confirms empty → clear
+- **authoritative** listing confirms empty → clear
+- non-authoritative listing comes back empty (local mirror lag) → keep
+  cache AND keep a known `.found` — "not detected locally" must not
+  destroy durable knowledge over a transient mirror state
 - disconnect → clear
 - listing failure (`unreachable`) → keep (stale info beats nothing while
   offline; the visible status still reports unreachable honestly)
@@ -392,7 +395,7 @@ keep it honest:
 | Upload the manifest **last** (data → media → manifest) | Same principle as pointer-last atomic publish: a reader must never see a manifest describing an upload that hasn't finished |
 | Compute counts from the **uploaded artifact** (the checkpointed snapshot file), never the live store | The live store keeps taking writes during the upload; live counts describe data a restore cannot return. Open the snapshot copy and count there |
 | Manifest failure never fails the backup | It's advisory display data; the snapshot is the durable outcome |
-| A backup that cannot author a manifest **deletes** the remote one | A stale manifest describing a newer snapshot lies; absent beats wrong |
+| A backup that lands no manifest — unproducible OR upload failed — **deletes** the remote one (best-effort) | A stale manifest describing a newer snapshot lies; absent beats wrong. The delete must cover the upload-failure path too, not just "never tried" |
 | Readers treat missing / corrupt / future-`schemaVersion` manifests as absent | Display degrades to metadata-only; the manifest must never gate restore or surface an error |
 | Carry `schemaVersion` from day one | Future breaking manifest changes get a version gate without a new filename |
 
