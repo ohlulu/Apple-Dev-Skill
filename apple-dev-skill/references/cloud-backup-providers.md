@@ -319,6 +319,83 @@ for name in manifest.mediaFilenames {
 }
 ```
 
+## Remote Snapshot Status: Authority, Revalidation, Cache
+
+A backup screen must answer "what would Restore give me?" from live
+cloud state, not from device-local last-backup records (those only say
+what THIS device last did — another device may have overwritten or
+deleted the cloud copy). Model it as an explicit per-provider status:
+`unknown / checking / none / unreachable / found(info)`.
+
+### Listing authority is a per-provider trait
+
+Not every provider's `list` means the same thing. Gate any
+definitive-sounding decision on it:
+
+| Provider list | Meaning of an empty listing | May disable Restore on "none"? |
+|---|---|---|
+| REST enumeration (Drive, Dropbox) | The backup truly doesn't exist | Yes |
+| Local mirror (iCloud ubiquity dir via FileManager) | "Not detected locally" — may lag sync or not be materialized | No — keep Restore enabled, use non-assertive copy ("not detected"), let the download's own not-found error be the backstop |
+
+Expose it as a protocol trait (`var listIsAuthoritative: Bool`, default
+`true`, local-mirror stores override `false`) so the UI never switches
+on concrete provider types.
+
+### Stale-while-revalidate, never downgrade
+
+A refresh that re-lists while a `.found` is already known must keep
+showing it — the loading state is only honest when there is nothing to
+show. Downgrading known results to "checking" makes every screen
+re-entry flash a loading state over data the app already has.
+
+### Display cache: event-driven invalidation, not TTL
+
+Persist the last APPLIED `.found` info per provider (JSON in a KV
+store) and seed the status from it at mount, so relaunch / re-entry
+shows the last-known snapshot immediately. Freshness comes from
+revalidate-on-appearance, so the cache needs no expiry — it is
+invalidated by events that actually change the answer:
+
+- new applied `.found` → overwrite
+- listing confirms empty → clear
+- disconnect → clear
+- listing failure (`unreachable`) → keep (stale info beats nothing while
+  offline; the visible status still reports unreachable honestly)
+
+The cache is display-only — restore correctness must never read it.
+
+### Bounding and racing the refresh
+
+- **Coalesce, don't cache**: a short window (~10s) that absorbs rapid
+  re-entry bursts, plus in-flight dedupe (one listing per provider at a
+  time). Anything longer delays external-deletion detection.
+- **Actor reentrancy**: every `await` inside the refresh is a point
+  where disconnect / auth flip / backup / restore can interleave. Guard
+  writes with a per-provider generation token bumped by those events; a
+  refresh whose token no longer matches discards its result — otherwise
+  a slow listing resurrects `.found` on credentials the user just
+  disconnected.
+- **Stamp the coalescing window only when a result is applied** (never
+  in `defer`): a discarded stale refresh that stamps the window
+  suppresses the next legitimate refresh after the event that
+  invalidated it.
+
+## Advisory Contents Manifest (Flat-Overwrite Layouts)
+
+Listing metadata gives date + size but not *contents*. To let the UI
+answer "what's in this backup?" (counts, authoring device) before a
+restore, upload a small `manifest.json` beside the snapshot. Rules that
+keep it honest:
+
+| Rule | Why |
+|------|-----|
+| Upload the manifest **last** (data → media → manifest) | Same principle as pointer-last atomic publish: a reader must never see a manifest describing an upload that hasn't finished |
+| Compute counts from the **uploaded artifact** (the checkpointed snapshot file), never the live store | The live store keeps taking writes during the upload; live counts describe data a restore cannot return. Open the snapshot copy and count there |
+| Manifest failure never fails the backup | It's advisory display data; the snapshot is the durable outcome |
+| A backup that cannot author a manifest **deletes** the remote one | A stale manifest describing a newer snapshot lies; absent beats wrong |
+| Readers treat missing / corrupt / future-`schemaVersion` manifests as absent | Display degrades to metadata-only; the manifest must never gate restore or surface an error |
+| Carry `schemaVersion` from day one | Future breaking manifest changes get a version gate without a new filename |
+
 ## Checklist for a New Cloud-Sync Feature
 
 1. **Visible storage from day one** — `drive.file` / Dropbox app-folder /
@@ -341,3 +418,9 @@ for name in manifest.mediaFilenames {
     `-1005` retry for POST downloads; curl-replay as the first diagnostic.
 11. **Close live DB connections before the restore file swap**; reopen and
     re-resolve readers after.
+12. Remote status as explicit state; **list authority as a trait** (iCloud
+    local mirror ≠ server truth); stale-while-revalidate; event-driven
+    display cache; generation token around refresh awaits.
+13. Advisory **manifest uploaded last**, counts from the uploaded
+    artifact (never the live store), failure-tolerant, stale-dropped,
+    schema-versioned.

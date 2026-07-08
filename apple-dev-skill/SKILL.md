@@ -103,7 +103,7 @@ Consult the reference file for each topic relevant to the current task. Apply al
 | Cell registration. CellRegistration vs legacy register/dequeue, handler lifecycle, retain cycles, dynamic cell types. | [cell-registration](references/cell-registration.md) |
 | Diffable data source. Hashable-not-Identifiable constraint, two identifier patterns, reconfigureItems as the content-update channel, iOS 15 semantic changes, cross-framework sharing mistakes. | [diffable-data-source](references/diffable-data-source.md) |
 | List composition — heterogeneous cells, row/item controllers, section controllers, pagination seam, dispatch contract. Includes sectionHeaderTopPadding and sticky-header gotchas. | [list-composition](references/list-composition.md) |
-| Screen composition / composer. Programmatic controller instantiation, dependency wiring, navigation closures, scene root composition. | [composer](references/composer.md) |
+| Screen composition / composer. Programmatic controller instantiation, dependency wiring, navigation closures, scene root composition, idempotent bootstrap for recreated detail controllers. | [composer](references/composer.md) |
 | UISplitViewController on iOS 26. The primary column floats as an overlay over a full-width secondary — layout pinning, push-transition host wrapper, and detail-swap fixes. Read before any iPad master-detail work targeting iOS 26. | [split-view-controller](references/split-view-controller.md) |
 | iOS 26 behavior changes catalog. Consolidated index of iOS 18 → 26 deltas with links to the deep references, what did NOT change, and the diagnostic workflow for suspected regressions. | [ios-26-behavior-changes](references/ios-26-behavior-changes.md) |
 | Image resizing. API decision matrix (renderer vs thumbnail vs ImageIO downsampling), display vs encode paths, template icon sizing. | [image-resizing](references/image-resizing.md) |
@@ -127,7 +127,7 @@ Consult the reference file for each topic relevant to the current task. Apply al
 | Eliminating objc_setAssociatedObject. UIAction closures, subclass stored properties, wrapper views — plus the downstream traps each replacement introduces. | [associated-objects](references/associated-objects.md) |
 | UIViewRepresentable bridge. Two golden rules (defer UIKit→SwiftUI state async; diff instead of reset in updateUIView), coordinator callbacks, pre-rendered bitmaps, Swift 6 delegate isolation. | [uiview-representable](references/uiview-representable.md) |
 | iCloud ubiquity container. NSMetadataQuery discovery, bulk download with progress-based timeouts, upload-confirmation polling with fresh URLs, Files-app visibility, fresh-install restore. | [icloud-ubiquity](references/icloud-ubiquity.md) |
-| Cloud backup providers / OAuth REST (Google Drive, Dropbox). Provider-agnostic backup architecture — user-visible storage, OAuth scope re-consent, atomic pointer publish, restore-integrity hardening, transfer-session configuration. Read before building any cloud backup/restore feature. | [cloud-backup-providers](references/cloud-backup-providers.md) |
+| Cloud backup providers / OAuth REST (Google Drive, Dropbox). Provider-agnostic backup architecture — user-visible storage, OAuth scope re-consent, atomic pointer publish, restore-integrity hardening, transfer-session configuration, remote-status display (list authority, stale-while-revalidate, display cache), advisory contents manifest. Read before building any cloud backup/restore feature. | [cloud-backup-providers](references/cloud-backup-providers.md) |
 
 ### Xcode / Project Setup
 

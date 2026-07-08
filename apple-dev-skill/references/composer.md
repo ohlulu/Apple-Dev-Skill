@@ -170,6 +170,36 @@ The scene layer decides navigation structure. Each screen composer decides how i
 - Keep view hierarchy creation inside the screen type; the composer should choose initializers and wiring, not assemble subviews.
 - Return a controller that is ready to display without more external mutation.
 
+## Short-Lived Controllers, Long-Lived State
+
+In master-detail composition, a detail factory typically builds a **fresh
+view controller per selection**, while the view model / coordinator /
+store it wires in is **session-lived and shared**. Any configure /
+bootstrap call the controller makes on appearance (`viewDidLoad` →
+`viewModel.bootstrap()`) therefore runs once per *visit*, not once per
+*app launch*.
+
+**Rule: every bootstrap-style method reachable from a recreated
+controller must be idempotent — it may seed missing state, never reset
+existing state.** A non-idempotent bootstrap wipes the long-lived side's
+caches and in-flight results on every section switch, and the UI
+re-enters its loading state each visit. The failure hides from unit
+tests (which construct the shared object exactly once) and only surfaces
+when a user toggles between sections.
+
+```swift
+// Seed ONLY what doesn't exist; re-running is a no-op for known keys.
+func setProviders(_ providers: [Provider: Store]) {
+  self.providers = providers
+  for provider in providers.keys where states[provider] == nil {
+    states[provider] = loadPersistedState(for: provider)
+  }
+}
+```
+
+When auditing: list every method the controller calls before first
+display, and check each against "what happens on the second call?".
+
 ## Testability
 
 Composers are easiest to verify through wiring tests:
@@ -188,6 +218,7 @@ Before shipping a new composer or navigation wiring:
 - [ ] Navigation closures carry data out; ≥2 callback parameters → collapsed into one result enum
 - [ ] No retain cycles in closure wiring (weak references where closures point back)
 - [ ] Returned controller is display-ready without further external mutation
+- [ ] Every bootstrap/configure path from a recreated controller is idempotent — second call must not reset shared session state
 
 ## Warning Signs
 
@@ -197,3 +228,4 @@ The composition boundary is drifting when:
 - the composer starts rendering or mapping view models itself
 - the same controller initialization and callback wiring is duplicated across call sites
 - a navigation closure accepts two or more `@escaping` callback parameters (closure-of-closures)
+- a screen shows its loading state every time the user switches back to it — a recreated controller is probably resetting shared state on bootstrap
