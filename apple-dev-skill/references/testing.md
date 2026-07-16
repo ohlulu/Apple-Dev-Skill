@@ -191,7 +191,7 @@ Verify this flow:
 
 Host the view under test in a `UIWindow` (`isHidden = false`), never a bare `UIView` container. Outside a window, mutating a constraint's `constant` may not propagate through nested stacks at all — frames silently keep their old values and the test asserts against stale geometry.
 
-Scope honestly: bugs that need production's multi-pass width churn (scroll view + split view + column settling) often do **not** reproduce in a simplified window harness — UIKit's automatic machinery works fine there. Treat such frame tests as smoke-level invariants, document the behavioral contract at the fix site, and verify the real screen visually. Always test-the-test: confirm the assertion fails against the pre-fix code before trusting it as regression coverage.
+Scope honestly: bugs that need production's multi-pass width churn (scroll view + split view + column settling) often do **not** reproduce in a simplified window harness — UIKit's automatic machinery works fine there. This holds even for high-fidelity harnesses: mounting the real view controller in a nav controller at exact production sizes with wide→narrow window resizes still self-heals. Do not burn cycles escalating harness fidelity; treat such frame tests as smoke-level invariants, document the behavioral contract at the fix site, and verify the real screen visually. Always test-the-test: confirm the assertion fails against the pre-fix code before trusting it as regression coverage.
 
 ## Async XCTestCase + Long-Lived Tasks (Xcode 26+)
 
