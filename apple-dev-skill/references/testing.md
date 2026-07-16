@@ -187,6 +187,12 @@ Verify this flow:
 - test scene/window setup with a real `UIWindow` when possible
 - assert key-and-visible behavior and root controller composition
 
+### Frame-level layout tests
+
+Host the view under test in a `UIWindow` (`isHidden = false`), never a bare `UIView` container. Outside a window, mutating a constraint's `constant` may not propagate through nested stacks at all — frames silently keep their old values and the test asserts against stale geometry.
+
+Scope honestly: bugs that need production's multi-pass width churn (scroll view + split view + column settling) often do **not** reproduce in a simplified window harness — UIKit's automatic machinery works fine there. Treat such frame tests as smoke-level invariants, document the behavioral contract at the fix site, and verify the real screen visually. Always test-the-test: confirm the assertion fails against the pre-fix code before trusting it as regression coverage.
+
 ## Async XCTestCase + Long-Lived Tasks (Xcode 26+)
 
 Xcode 26 / Swift 6 strict concurrency aborts the test bundle in

@@ -127,6 +127,24 @@ When Auto Layout sets this view's frame, its `layoutSubviews` fires and the laye
 - **Frame-dependent properties** (frame, path, shadowPath): set in the **owning view's** `layoutSubviews`.
 - **Never reach down** from a parent's `layoutSubviews` to read a child's bounds for layer sizing.
 
+## Layer Border Draws Above All Sublayers
+
+`layer.borderWidth` / `borderColor` are composited **on top of every sublayer** — and every subview is a sublayer. Any subview that overlaps the border path gets the border line drawn straight through it. Typical victims: a floating "Recommended" pill straddling a card's top edge, a close button hanging off a corner, an avatar overlapping a ring.
+
+Rule: when any subview overlaps a bordered view's edge, do not put the border on the container's own layer. Move it to a dedicated border subview pinned to the container's bounds and ordered **below** the overlapping subview; keep `cornerRadius` on the container for the background fill.
+
+```swift
+let borderView = UIView()
+borderView.isUserInteractionEnabled = false
+borderView.layer.cornerRadius = Radius.lg   // match the container
+borderView.layer.cornerCurve = .continuous
+borderView.layer.borderWidth = 2
+addSubview(borderView)          // added before the badge → renders below it
+// pin borderView to all four edges; badge is added later, on top
+```
+
+State changes (selection color) then target `borderView.layer.borderColor` instead of `layer.borderColor`.
+
 ## UILabel `backgroundColor` Is Not Clipped by `cornerRadius`
 
 `UIView.backgroundColor` is normally rendered through `layer.backgroundColor`, which Core Animation clips to `cornerRadius` automatically. **`UILabel` is the exception.** When you set `backgroundColor` on a UILabel, the colour is painted into the layer's **contents bitmap** (alongside the text glyphs), not assigned to `layer.backgroundColor`. Core Animation only clips contents when `masksToBounds = true`.
