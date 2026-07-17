@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.9.0] — 2026-07-17
+
+- Added `label-wrapping` reference — multiline label wrapping in stack views: icon-row rule (hugging alone lets the icon be crushed to zero; require horizontal compression resistance too), stale wrap height under width churn fixed by a self-syncing `preferredMaxLayoutWidth` label with placement rationale, symptom→cause table; Topic Router row carries NOT-for boundaries against `overflow-detection` and `self-sizing`.
+- Documented layer border z-order in `shadow-and-clipping` — `layer.borderWidth` composites above every sublayer, striking through overlapping subviews (floating badge, corner close button); fix is a dedicated border subview ordered below the overlapping subview.
+- Documented frame-level layout tests in `testing` — host views in a real `UIWindow` (bare containers silently keep stale frames after constraint changes); harness fidelity does not reproduce production multi-pass width-churn bugs, so treat such tests as smoke-level invariants and always test-the-test against pre-fix code.
+
 ## [0.8.0] — 2026-07-08
 
 - Added `photo-picker` reference — `PHPickerViewController` vs deprecated `UIImagePickerController` library mode (~2× slower to present, every time, and requires photo permission PHPicker doesn't need), camera-mode exception, background-queue delegate callback trap, load-failure vs remove-image contract.
