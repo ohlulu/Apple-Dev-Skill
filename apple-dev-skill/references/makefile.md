@@ -32,12 +32,16 @@ Always provide a `run` target that builds, installs, and launches in one command
 ## Build + install + launch on simulator
 run: build
 	@APP=$(DD)/Build/Products/Debug-iphonesimulator/$(SCHEME).app; \
+	if [ ! -d "$$APP" ]; then \
+	  echo "❌  build artifact not found: $$APP"; exit 1; \
+	fi; \
 	BID=$$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$$APP/Info.plist"); \
 	xcrun simctl install booted "$$APP" && \
 	xcrun simctl launch booted "$$BID"
 ```
 
 Key rules:
+- **Guard the artifact** — `[ ! -d "$$APP" ]` before reading `Info.plist`. If `build` produced nothing under the expected path (wrong configuration, renamed scheme, silent build skip), `PlistBuddy` fails with a cryptic `Info.plist` error that hides the real cause; an explicit check names it and exits
 - Bundle ID **must** come from `PlistBuddy` reading the build artifact's `Info.plist` — never guess or hardcode
 - Use `booted` as the device target — avoids needing to know the exact UDID
 - If multiple simulators are booted, `booted` picks the first one; shut down extras or target by UDID
@@ -126,6 +130,20 @@ open: generate
 
 - `install` — explicit SPM resolve step. Newcomers run `make install` after clone; CI runs it before generating.
 - `open` — single command that regenerates and opens the workspace in Xcode, so an agent can leave the IDE warm for the developer after a structural change.
+- `gen` — muscle-memory alias for `generate`. Declare the target as `generate gen:` so both names share one recipe; keep the `help` awk multi-target-aware (see Help Target) or the alias line silently drops out of the menu.
+
+## Help Target
+
+`help` extracts each `##` comment and the target name that follows it. Two awk details are easy to get wrong:
+
+- **Strip the trailing colon** — run `sub(/:.*/,"",$$1)` before printing. Awk field `$$1` on a line like `build:` is the whole token `build:`, colon included; without the strip every entry renders as `build:` in the menu.
+- **Match multi-target lines** — use `/^[a-zA-Z0-9_-]+( [a-zA-Z0-9_-]+)*:/`. A single-token regex (`^[a-zA-Z_-]+:`) silently drops any line declaring more than one target, so alias lines like `generate gen:` never appear.
+
+```makefile
+## Show available targets
+help:
+	@awk '/^##/{if(!d){sub(/^## ?/,"");d=$$0};next} /^[a-zA-Z0-9_-]+( [a-zA-Z0-9_-]+)*:/{if(d){sub(/:.*/,"",$$1);printf "  \033[36m%-16s\033[0m %s\n",$$1,d};d=""} !/^##/{d=""}' $(MAKEFILE_LIST)
+```
 
 ## Adaptation Checklist
 

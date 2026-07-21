@@ -130,7 +130,7 @@ install:
 	tuist install
 
 ## Close Xcode and regenerate project
-generate:
+generate gen:
 	@$(CLOSE_XCODE_WINDOW) 2>/dev/null || true
 	tuist generate
 #	@rm -f $(UNWANTED_SCHEMES)
@@ -230,10 +230,10 @@ clean:
 
 ## Show available targets
 help:
-	@awk '/^##/{if(!d){sub(/^## ?/,"");d=$$0};next} /^[a-zA-Z_-]+:/{if(d){printf "  \033[36m%-16s\033[0m %s\n",$$1,d};d=""} !/^##/{d=""}' $(MAKEFILE_LIST)
+	@awk '/^##/{if(!d){sub(/^## ?/,"");d=$$0};next} /^[a-zA-Z0-9_-]+( [a-zA-Z0-9_-]+)*:/{if(d){sub(/:.*/,"",$$1);printf "  \033[36m%-16s\033[0m %s\n",$$1,d};d=""} !/^##/{d=""}' $(MAKEFILE_LIST)
 
 
-.PHONY: help install generate open \
+.PHONY: help install generate gen open \
         test test-xcode test-all \
         bump bump-build \
         preflight validate release submit tag \
