@@ -648,6 +648,15 @@ both in parallel:
   (with `viewController.view.layoutIfNeeded()` after the swap)? See
   `split-view-controller.md`.
 
+The gate decides *whether* an apply animates. What that apply is allowed
+to carry is a separate rule: an animated apply takes structural changes
+only, and `reconfigureItems` rides a second, non-animated apply. Folding
+the two together runs your cell's configure method inside UIKit's
+animation transaction and can strand a `UIStackView` arranged subview
+mid hide / unhide — see `diffable-data-source.md` → "Downstream Trap:
+reconfigure inside an animated apply" for the mechanism and the
+pixels-present / accessibility-element-absent diagnostic.
+
 For smaller details, `implicit-animations.md` carries the broader
 catalog of UIKit / CALayer animations that fire without an explicit
 `UIView.animate` block.

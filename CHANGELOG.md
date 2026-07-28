@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Documented the animated-reconfigure trap in `diffable-data-source` — an animated `apply` carries structural changes only; `reconfigureItems` rides a second, non-animated apply, because a cellProvider running inside the animation transaction can leave a `UIStackView` arranged subview's hide / unhide half-applied (`view.isHidden == true` → out of layout at `x = -width` and out of the accessibility tree, while `layer.isHidden == false` keeps painting). Includes the pixels-present / AX-element-absent diagnostic, the lldb flag comparison, why the cell-side `performWithoutAnimation` "fix" is wrong, and why the pin belongs in UI automation rather than a unit test. Corrected the Common Mistakes row that previously prescribed folding `reconfigureItems` into the same apply; `list-composition` → "First-Apply Animation Gate" now points at it.
+
 ## [0.9.0] — 2026-07-17
 
 - Added `label-wrapping` reference — multiline label wrapping in stack views: icon-row rule (hugging alone lets the icon be crushed to zero; require horizontal compression resistance too), stale wrap height under width churn fixed by a self-syncing `preferredMaxLayoutWidth` label with placement rationale, symptom→cause table; Topic Router row carries NOT-for boundaries against `overflow-detection` and `self-sizing`.

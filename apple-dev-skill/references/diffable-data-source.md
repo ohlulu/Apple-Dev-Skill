@@ -156,6 +156,40 @@ Keep the default halo only when the list is intentionally focus-driven (external
 
 **The trap is bi-directional**: any time you replace `reloadData()` / `reloadItems` with `reconfigureItems` (or the non-diffable `reconfigureRows(at:)`), audit the cell for a custom selection appearance. The old reload path was suppressing the halo as a side effect; the new path no longer does.
 
+### Downstream Trap: reconfigure inside an animated apply
+
+Reconfigure changes cell **content**; `animatingDifferences: true` animates cell **structure**. Ship them in one snapshot and the cellProvider runs inside UIKit's animation transaction — every property your configure method touches becomes an animatable change on a view that may be mid-insert.
+
+**Rule**: an apply that animates carries structural changes only. Send the content refresh as a second, never-animated apply.
+
+```swift
+let hadContent = dataSource.snapshot().numberOfItems > 0
+dataSource.apply(snapshot, animatingDifferences: hadContent)   // structure
+
+var reconfigured = snapshot
+reconfigured.reconfigureItems(reconfigured.itemIdentifiers)
+dataSource.apply(reconfigured, animatingDifferences: false)    // content
+```
+
+The second apply has an empty structural diff, so it costs one cellProvider pass over prepared cells — the same work the single-snapshot version was already doing.
+
+**Why it matters most for `UIStackView` cells**: flipping `isHidden` on an arranged subview inside an animation transaction can leave the hide / unhide half-applied. `view.isHidden` ends up `true` — the stack drops the view from its layout and parks it out of flow at `x = -width`, and UIKit drops it from the accessibility tree — while `layer.isHidden` stays `false` and the view keeps painting. Nothing later reconciles the two: the next layout pass honours the view flag, the render server honours the layer.
+
+**Diagnostic signature — pixels present, accessibility element absent.** A badge visibly overlapping a neighbouring view that `describe-ui` cannot find, and that `axe describe-ui --point` answers with "no translation object", is a stranded `isHidden`, not a missing `accessibilityIdentifier`. Confirm it by reading both flags — take the addresses from the window's `recursiveDescription`, which prints `hidden = YES` for the view:
+
+```
+(lldb) po [(UIView *)0xVIEW isHidden]                   // YES → out of layout + AX tree
+(lldb) po [(CALayer *)0xLAYER valueForKey:@"hidden"]    // 0   → layer still painting
+```
+
+A negative `frame.origin.x` on the same view (`frame = (-73.5 0; 73.5 16)`) is the corroborating tell: that is where `UIStackView` parks an arranged subview it believes is hidden.
+
+**Boundary**: toggling `isHidden` inside an animation block you authored — `performBatchUpdates` around a stack row reveal, say (see [compound-cell-row-animation](compound-cell-row-animation.md)) — is the supported way to animate stack height, and a strand there self-heals because the next toggle re-drives the same views. The defect is specific to a **data-source-driven** reconfigure: no later code re-drives the flag, so the half-applied state is permanent.
+
+**Do not "fix" this in the cell.** Wrapping `configure(...)` in `UIView.performWithoutAnimation` suppresses the symptom for one cell and leaves every other cell in the app exposed; the animated-reconfigure apply is the defect. Audit the data source first.
+
+**Unit tests do not reproduce it.** The strand needs overlapping real animation transactions — a hosted-window test that applies two snapshots back to back passes on the broken build. Pin it with a UI-automation assertion on the badge's `accessibilityIdentifier` instead: a stranded view is missing from the AX tree, so `assertVisible` is red on the broken build and green on the fixed one.
+
 ## iOS 15 Behavior Change
 
 The semantics of `apply(_:animatingDifferences:)` changed in iOS 15:
@@ -217,7 +251,8 @@ Task.detached {
 | Creating `CellRegistration` inside the cellProvider | Crash on iOS 15+ | Hoist the registration to a stored property — see [cell-registration](cell-registration.md) |
 | Driving the same dataSource from multiple threads | Data races / animation glitches | Pin to the main thread, or serialize through an actor |
 | Dequeuing a different cell type during reconfigure | UIKit assertion | Changing cell type requires `reloadItems`, not `reconfigureItems` |
-| Porting a reloadData()-based shell to diffable where `display(_:)` only calls `apply(snapshot)` | Rows whose id is unchanged but content changed (cart quantity, subtotal, row-internal view model) go silently stale — the diff can't see the change | Add `snapshot.reconfigureItems(snapshot.itemIdentifiers)` before `apply`, preserving the old "refresh everything on display" contract |
+| Porting a reloadData()-based shell to diffable where `display(_:)` only calls `apply(snapshot)` | Rows whose id is unchanged but content changed (cart quantity, subtotal, row-internal view model) go silently stale — the diff can't see the change | Reconfigure every id to preserve the old "refresh everything on display" contract — but as a **second, non-animated apply**, never folded into the animated one (see the trap above) |
+| `reconfigureItems` folded into an `animatingDifferences: true` apply | A badge / chip renders in the wrong place, overlapping a sibling, and is absent from the accessibility tree | Split into two applies: structure animated, content not |
 | `reconfigureItems([id])` on a selection / setSelected path without filtering ids missing from the snapshot | iOS warning / `NSInternalInconsistencyException` | Before apply: `let known = Set(snap.itemIdentifiers); snap.reconfigureItems(ids.filter { known.contains($0) })` |
 
 ## When to Reach for Diffable

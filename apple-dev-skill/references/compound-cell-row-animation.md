@@ -115,7 +115,7 @@ func toggleConditionalRow() {
 ### Why This Works
 
 1. **UISwitch stays untouched** — it was created during initial `configure(with:)`, outside any animation block. Its frame never changes.
-2. **UIStackView animates `isHidden`** — Apple intercepts `isHidden` changes on arranged subviews and converts them to height animations automatically.
+2. **UIStackView animates `isHidden`** — Apple intercepts `isHidden` changes on arranged subviews and converts them to height animations automatically. Safe here because *you* drive the toggle and re-drive it on the next one; a diffable data source flipping the same flag from inside an animated `apply` can strand the transition permanently — see [diffable-data-source](diffable-data-source.md) → "Downstream Trap: reconfigure inside an animated apply".
 3. **`performBatchUpdates`** — tells the collection view to re-query `preferredLayoutAttributesFitting` for affected cells. The cell reports its new intrinsic height, and the collection view animates all cells below to their new positions.
 
 ### Why `invalidateLayout()` Fails Here
