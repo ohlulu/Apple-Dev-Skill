@@ -106,3 +106,11 @@ If unsure, err on the side of excluding content.
 **Avoid**: Architecture enforcement, tools, server-side Swift
 **Tone**: Factual, helpful, non-prescriptive
 **Goal**: Make agents effective Apple app developers without enforcing opinions
+
+## Linear
+
+Tickets for this repo: label `skills` on team `OH`. `skills` covers all skill-authoring work — shared with `android-expert-skill` and the skills under `~/.pi` — so filter by title.
+
+```bash
+LINEAR_API_KEY="$(cat ~/.config/linear/api_key)" linear issue query --team OH --label skills
+```
