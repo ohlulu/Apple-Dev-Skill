@@ -139,7 +139,7 @@ Family rule: when a reference is a special case of another, both router rows mus
 |-------|-----------|
 | Xcode project setup. Workspace layout, synced folders, SPM deps, cross-project refs, app identity, shared schemes, gotcha checklist. | [xcode-project-setup](references/xcode-project-setup.md) |
 | xcconfig hierarchy. Naming convention, inline vs xcconfig split, target-level keys, the Tuist `.recommended` SWIFT_VERSION shadowing trap, Xcode upgrade SOP. | [xcconfig](references/xcconfig.md) |
-| Build phase scripts. SwiftFormat pre-commit hook, SwiftLint pre-build, Crashlytics dSYM upload, script sandboxing. | [build-phases](references/build-phases.md) |
+| Build phase scripts. SwiftFormat pre-commit hook, SwiftLint pre-build, Crashlytics dSYM upload (all-dSYMs directory rule, Debug collection gating), script sandboxing. | [build-phases](references/build-phases.md) |
 | Makefile. Design principles, simulator destination, run target, warnings target, adaptation checklist. | [makefile](references/makefile.md) |
 | Makefile template. | [Makefile.template](references/Makefile.template) |
 | Tuist SPM integration. Xcode-native vs XcodeProj-based, wrapper target problem, migration steps. | [tuist-spm-integration](references/tuist-spm-integration.md) |

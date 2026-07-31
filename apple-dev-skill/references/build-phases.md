@@ -83,31 +83,34 @@ Note: SwiftLint is often warning-level (exit 0 on missing), not error-level like
 
 ⚠️ SDK version changes break copy-pasted scripts silently. Pin the version in a comment.
 
-⚠️ **`--build-phase` is not enough by itself.** Firebase SDK 12.x requires `-gsp` and `-p ios` to tag uploads with project + platform metadata. Without them, uploads succeed but the Crashlytics console shows version=unknown for every build, and some dSYMs may be skipped entirely — the failure is silent on the build side.
+⚠️ **`--build-phase` mode uploads ONLY the current target's own dSYM.** It resolves `${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}` and ignores every other dSYM in the same folder (verified empirically against upload-symbols 3.21: two dSYMs staged in the folder → `DSYM Paths: [<app's only>]`). Every dynamic dependency (`product: .framework`) produces its own dSYM, and in a Composition-Root layout those frameworks hold nearly all real code — skipping them guarantees "missing dSYM" console warnings once crashes arrive. Pass the whole `DWARF_DSYM_FOLDER_PATH` directory as an explicit path instead: directory arguments are searched recursively, so app + framework dSYMs upload in one call. Static products (`.staticFramework` / `.staticLibrary`, and SPM's default static linkage) are linked into the app binary and covered by the app's dSYM.
+
+⚠️ `-gsp` and `-p` are metadata tags, not upload switches. Uploads succeed without them, but the console shows version=unknown or files dSYMs in the wrong platform bucket — the failure is invisible on the build side.
 
 ```swift
 .post(
   script: """
+  set -euo pipefail
   # Only upload dSYMs during archive (install) builds.
   if [ "$ACTION" != "install" ]; then exit 0; fi
   if [ "${DEBUG_INFORMATION_FORMAT}" != "dwarf-with-dsym" ]; then exit 0; fi
   # Firebase SDK 12.x — binary is Crashlytics/upload-symbols (not FirebaseCrashlytics/run)
-  # Verified: 2026-06
+  # Verified: 2026-07 (upload-symbols 3.21)
   SCRIPT=$(find "${BUILD_DIR%Build/*}" -path "*/Crashlytics/upload-symbols" -type f | head -1)
-  if [ -n "${SCRIPT}" ]; then
-    "${SCRIPT}" \\
-      -gsp "${SRCROOT}/Targets/<App>/Resources/GoogleService-Info.plist" \\
-      -p ios \\
-      --build-phase
-  else
-    echo "warning: Crashlytics upload-symbols not found — dSYMs will NOT be uploaded."
+  if [ -z "${SCRIPT}" ]; then
+    # This branch only runs on archive builds: a missing tool means shipping
+    # an archive whose crashes can never be symbolicated. Fail now, not post-incident.
+    echo "error: Crashlytics upload-symbols not found — refusing to archive with un-uploadable dSYMs." >&2
+    exit 1
   fi
+  "${SCRIPT}" \\
+    -gsp "${SRCROOT}/Resources/GoogleService-Info.plist" \\
+    -p ios \\
+    -- "${DWARF_DSYM_FOLDER_PATH}"
   """,
   name: "Firebase Crashlytics — Upload dSYMs",
   inputPaths: [
-    "${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}",
-    "${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${PRODUCT_NAME}",
-    "${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Info.plist",
+    "${DWARF_DSYM_FOLDER_PATH}",
     "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/GoogleService-Info.plist",
     "$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)",
   ],
@@ -117,13 +120,35 @@ Note: SwiftLint is often warning-level (exit 0 on missing), not error-level like
 
 Required flags:
 - `-gsp <path>` — Firebase project association. Without this, console shows 版本=未知.
-- `-p ios` — platform tag. Without this, dSYM may land in wrong platform bucket.
-- `--build-phase` — read `DWARF_DSYM_FOLDER_PATH` from env (don't pass dSYM paths manually).
+- `-p ios` — platform tag. Required in explicit-paths mode (only inferred from env in `--build-phase` mode).
+- `-- "${DWARF_DSYM_FOLDER_PATH}"` — the whole products directory, searched recursively. Do NOT substitute `--build-phase`: it silently narrows the upload to the app's own dSYM.
+
+Tradeoff to keep: explicit-paths mode uploads synchronously and a failed upload fails the archive (`--build-phase` self-backgrounds and never blocks). Synchronous is the right default — an archive whose dSYMs silently failed to upload ships blind.
+
+### Debug builds: gate collection off instead of uploading
+
+Debug builds produce no dSYM at all (`DEBUG_INFORMATION_FORMAT = dwarf`) and the upload script only runs at archive — so every dev-build crash reaches the console permanently unsymbolicatable and triggers eternal "upload dSYM" nags. Dev crashes are already visible in Xcode; suppress the noise at the source by gating collection per config:
+
+```swift
+// Project.swift infoPlist — expands from a per-config build setting
+"FirebaseCrashlyticsCollectionEnabled": "$(FIREBASE_CRASHLYTICS_COLLECTION_ENABLED)",
+```
+
+```
+// Debug.xcconfig
+FIREBASE_CRASHLYTICS_COLLECTION_ENABLED = NO
+// Release.xcconfig
+FIREBASE_CRASHLYTICS_COLLECTION_ENABLED = YES
+```
+
+The xcconfig-expanded value is a *string*, and that is fine: `FIRCLSDataCollectionArbiter` accepts NSString or NSNumber and calls `boolValue` (verified in SDK source, Firebase 12.x). The key is read before `FirebaseApp.configure()` returns, so no crash-reporting session ever starts in Debug. Priority order: `setCrashlyticsCollectionEnabled(_:)` sticky value > Info.plist key > FirebaseApp `isDataCollectionDefaultEnabled`.
 
 Post-integration checklist:
+- [ ] Audit product types first: every `product: .framework` dependency adds a dSYM the upload must cover
 - [ ] Build succeeds with zero warnings from the script
 - [ ] Archive once and check Crashlytics console dSYM tab within 24h — **verify version metadata matches the build (not 未知/unknown)**, not just that UUIDs appear
-- [ ] No required-missing rows for the version you just shipped
+- [ ] No required-missing rows for the version you just shipped — including the dynamic frameworks' UUIDs, not only the app binary
+- [ ] Debug run reports no Crashlytics session (collection gate active); dev crashes stay out of the console
 - [ ] SDK upgrade? Re-verify binary path: `find "${BUILD_DIR%Build/*}" -path "*/Crashlytics/upload-symbols"`
 - [ ] Migrating from another project? Diff your `Project.swift` Crashlytics script against the known-working one — do not copy a minimal subset
 
