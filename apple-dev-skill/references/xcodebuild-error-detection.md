@@ -33,7 +33,8 @@ All `xc-*.sh` scripts (`xc-build.sh`, `xc-build-run.sh`, `xc-test.sh`) must shar
 
 ## Also Include
 
-- `CODE_SIGNING_ALLOWED=NO` — prevents signing errors from masking real build failures in CI and local scripts. **Compile-check and test targets only — never on a build that gets installed** (`simctl install`, run targets). The flag skips even ad-hoc signing, so the binary ships without an `application-identifier` entitlement and simulator securityd rejects every Keychain call with `-34018 errSecMissingEntitlement`: token loads return nil ("not connected" despite a valid stored session) and saves fail silently after a successful OAuth exchange. Simulator ad-hoc signing needs no identity or account — there is no reason to disable it on an installable build.
+- `CODE_SIGNING_ALLOWED=NO` — prevents signing errors from masking real build failures in CI and local scripts. **Compile-check targets only — never on a build that gets installed** (`simctl install`, run targets, and test targets, whose bundle is installed too). The flag skips the `CodeSign` build phase and leaves only the ad-hoc signature the linker emits; `codesign -dvvv` reports `flags=0x20002(adhoc,linker-signed)` with it versus `flags=0x2(adhoc)` without. Simulator securityd rejects every Keychain call from a linker-signed-only binary with `-34018 errSecMissingEntitlement`: token loads return nil ("not connected" despite a valid stored session) and saves fail silently after a successful OAuth exchange. Simulator ad-hoc signing needs no identity or account — there is no reason to disable it on an installable build. Note that simulator apps carry an empty entitlements dictionary whether or not the flag is used, so do not diagnose this by grepping for `application-identifier`; compare `codesign -dvvv` flags instead.
+- Keep the flag consistent across every script sharing one DerivedData path. A flag present in some and absent in others alternates the build-settings fingerprint against a single cache and forces repeated full rebuilds.
 - Consistent `XC_CONFIG` — all scripts should source the same `xc-env.sh` for scheme, destination, and configuration
 
 ## xcodebuild test: Crash Detection
@@ -50,10 +51,12 @@ Required pattern when verifying a test run:
 xcodebuild test ... 2>&1 | tee /tmp/xc-test.log
 EXIT=${PIPESTATUS[0]}
 
-# Crashes — the signal that something exploded inside the bundle.
-# Deliberately excludes a bare `crashed`: the host app's own runtime logging
-# shares this output stream, so that word turns every noisy run red.
-grep -E "Restarting after unexpected exit|SIGABRT|EXC_BAD_ACCESS" /tmp/xc-test.log
+# Crashes — the signal that something exploded inside the bundle. Anchor to how
+# a crash is REPORTED, not to the signal name: a bare `crashed` matches the host
+# app's own runtime logging on this same stream, and a bare `SIGABRT` matches
+# Crashlytics printing "The signal SIGABRT has a non-Crashlytics handler" on
+# every green run. Grep a known-passing log before widening this.
+grep -E "Restarting after unexpected exit|Crashed:|due to (signal )?(SIGABRT|SIGSEGV)|terminated due to" /tmp/xc-test.log
 
 # Plus the usual sanity checks
 grep -E "\*\* TEST (SUCCEEDED|FAILED)" /tmp/xc-test.log

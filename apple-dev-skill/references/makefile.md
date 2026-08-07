@@ -156,7 +156,7 @@ if grep -qF "** TEST FAILED **" "$LOG" || ! grep -qF "** TEST SUCCEEDED **" "$LO
 fi
 ```
 
-Scope the crash pattern to unambiguous markers — `Restarting after unexpected exit|SIGABRT|EXC_BAD_ACCESS`. A bare `crashed` matches the host app's own runtime logging, which shares the same output stream, and turns every noisy test run red.
+Anchor the crash pattern to how a crash is *reported*, not to the signal name. A bare `crashed` matches the host app's own runtime logging, which shares the output stream. So does a bare `SIGABRT`: Firebase Crashlytics prints `The signal SIGABRT has a non-Crashlytics handler` on every green run, which reddens the entire suite. Start from markers that only appear on an actual abort — `Restarting after unexpected exit|Crashed:|due to (signal )?(SIGABRT|SIGSEGV)|terminated due to` — and before widening it, grep a known-passing log for the term you are about to add.
 
 This applies to any target that inspects a build log, `warnings` included.
 
@@ -250,7 +250,9 @@ APP_PATH="${TARGET_BUILD_DIR}/${WRAPPER_NAME}"
 
 Guard the artifact before using it — `[ ! -d "$APP_PATH" ]`. If the build produced nothing at the expected path, reading `Info.plist` fails with a cryptic error that hides the real cause; an explicit check names it.
 
-**The build that `run` installs must stay signed** — never pass `CODE_SIGNING_ALLOWED=NO` on it. That flag skips even ad-hoc signing, so the installed app has no `application-identifier` entitlement and simulator securityd rejects every Keychain call with `-34018`: stored credentials read as nil and new writes fail silently. Simulator ad-hoc signing needs no identity, so the flag buys nothing here — reserve it for compile-check targets whose product is never installed.
+**The build that `run` installs must stay signed** — never pass `CODE_SIGNING_ALLOWED=NO` on it. That flag skips the `CodeSign` build phase, leaving only the ad-hoc signature the linker emits. `codesign -dvvv` tells the two apart: `flags=0x20002(adhoc,linker-signed)` with the flag, `flags=0x2(adhoc)` without it. Simulator securityd rejects every Keychain call from a linker-signed-only binary with `-34018`, so stored credentials read back as nil and new writes fail silently — the app surfaces nothing, and the symptom usually gets misread as an OAuth or session bug. Simulator ad-hoc signing needs no identity or account, so the flag buys nothing here; reserve it for compile-check targets whose product is never installed.
+
+Do not verify this by looking for an `application-identifier` entitlement. Simulator builds carry an empty entitlements dictionary either way — measured across three separate apps — so its absence proves nothing. The real signature is the distinguishing factor; check `codesign -dvvv` flags.
 
 ## Warnings Target
 
@@ -346,15 +348,16 @@ Regeneration must close the project's Xcode window first — Xcode holds referen
 
 ## Help Target
 
-`help` extracts each `##` comment and the target name that follows it. Two awk details are easy to get wrong:
+`help` extracts each `##` comment and the target name that follows it. Three awk details are easy to get wrong:
 
 - **Strip the trailing colon** — run `sub(/:.*/,"",$$1)` before printing. Awk field `$$1` on a line like `build:` is the whole token including the colon; without the strip every entry renders as `build:`
 - **Match multi-target lines** — use `/^[a-zA-Z0-9_-]+( [a-zA-Z0-9_-]+)*:/`. A single-token regex (`^[a-zA-Z_-]+:`) silently drops any line declaring more than one target, so aliases like `generate gen:` never appear
+- **Do not let a plain `#` comment clear the pending description** — add `/^#/{next}` before the target rule. The naive final clause `!/^##/{d=""}` resets `d` on *any* non-`##` line, so the common shape of a `##` doc line followed by a `#` comment explaining the why, then the target, drops that target from the menu entirely. This one hides well: the target still works, it is just invisible in `make help`
 
 ```makefile
 ## Show available targets
 help:
-	@awk '/^##/{if(!d){sub(/^## ?/,"");d=$$0};next} /^[a-zA-Z0-9_-]+( [a-zA-Z0-9_-]+)*:/{if(d){sub(/:.*/,"",$$1);printf "  \033[36m%-16s\033[0m %s\n",$$1,d};d=""} !/^##/{d=""}' $(MAKEFILE_LIST)
+	@awk '/^##/{if(!d){sub(/^## ?/,"");d=$$0};next} /^#/{next} /^[a-zA-Z0-9_-]+( [a-zA-Z0-9_-]+)*:/{if(d){sub(/:.*/,"",$$1);printf "  \033[36m%-16s\033[0m %s\n",$$1,d};d=""} {d=""}' $(MAKEFILE_LIST)
 ```
 
 ## Adaptation Checklist

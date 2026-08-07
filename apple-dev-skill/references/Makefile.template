@@ -56,9 +56,12 @@ LOGDIR := $(DD)/logs
 
 # Lines streamed to the screen while a build runs; everything goes to the log.
 ERROR_PATTERN := error:|BUILD FAILED|TEST FAILED|Testing failed
-# Crash markers only — a bare `crashed` matches the host app's own runtime
-# logging on the same stream and turns every noisy run red.
-CRASH_PATTERN := Restarting after unexpected exit|SIGABRT|EXC_BAD_ACCESS
+# Crash markers. Anchor these to how a crash is REPORTED, not to the signal
+# name: a bare `crashed`, or a bare `SIGABRT`, also matches ordinary logging
+# that merely names the signal. Crashlytics prints "The signal SIGABRT has a
+# non-Crashlytics handler" on every green run, which would redden the suite.
+# Widen only after checking what your own SDKs emit on a passing run.
+CRASH_PATTERN := Restarting after unexpected exit|Crashed:|due to (signal )?(SIGABRT|SIGSEGV)|terminated due to
 
 # Version source (pick one, delete the other)
 # --- xcconfig ---
@@ -165,9 +168,12 @@ test:
 # ---------------------------------------------------------------------------
 
 ## Build for the pinned simulator (Debug)
-## NOTE: must stay signed. CODE_SIGNING_ALLOWED=NO strips the
-## application-identifier entitlement and simulator securityd then rejects every
-## Keychain call with -34018 — credentials read as nil and writes fail silently.
+## NOTE: must stay signed. CODE_SIGNING_ALLOWED=NO skips the CodeSign phase,
+## leaving only the linker's ad-hoc signature — codesign -dvvv reports
+## flags=0x20002(adhoc,linker-signed) instead of flags=0x2(adhoc) — and simulator
+## securityd then rejects every Keychain call with -34018: credentials read back
+## as nil and writes fail silently. Simulator apps have empty entitlements either
+## way, so the signature is what matters, not an application-identifier check.
 ## That flag is only safe on compile-check targets that are never installed.
 build:
 	$(call xc,build-debug,$(SCHEME),build,-configuration Debug)
@@ -291,7 +297,7 @@ clean:
 
 ## Show available targets
 help:
-	@awk '/^##/{if(!d){sub(/^## ?/,"");d=$$0};next} /^[a-zA-Z0-9_-]+( [a-zA-Z0-9_-]+)*:/{if(d){sub(/:.*/,"",$$1);printf "  \033[36m%-16s\033[0m %s\n",$$1,d};d=""} !/^##/{d=""}' $(MAKEFILE_LIST)
+	@awk '/^##/{if(!d){sub(/^## ?/,"");d=$$0};next} /^#/{next} /^[a-zA-Z0-9_-]+( [a-zA-Z0-9_-]+)*:/{if(d){sub(/:.*/,"",$$1);printf "  \033[36m%-16s\033[0m %s\n",$$1,d};d=""} {d=""}' $(MAKEFILE_LIST)
 
 .PHONY: help \
         install generate gen open \
