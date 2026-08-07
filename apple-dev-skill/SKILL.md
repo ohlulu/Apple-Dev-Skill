@@ -141,10 +141,11 @@ Family rule: when a reference is a special case of another, both router rows mus
 | Xcode project setup. Workspace layout, synced folders, SPM deps, cross-project refs, app identity, shared schemes, gotcha checklist. | [xcode-project-setup](references/xcode-project-setup.md) |
 | xcconfig hierarchy. Naming convention, inline vs xcconfig split, target-level keys, the Tuist `.recommended` SWIFT_VERSION shadowing trap, Xcode upgrade SOP. | [xcconfig](references/xcconfig.md) |
 | Build phase scripts. SwiftFormat pre-commit hook, SwiftLint pre-build, Crashlytics dSYM upload (all-dSYMs directory rule, Debug collection gating), script sandboxing. | [build-phases](references/build-phases.md) |
-| Makefile. Design principles, simulator destination, run target, warnings target, adaptation checklist. | [makefile](references/makefile.md) |
+| Makefile. Design principles, recipe-vs-script split, simulator vs physical-device targeting, DerivedData strategy, build result verification, log streaming, parameterised targets, run/warnings targets, adaptation checklist. | [makefile](references/makefile.md) |
 | Makefile template. | [Makefile.template](references/Makefile.template) |
+| Close this project's Xcode windows before regeneration (path-matched, not title-matched). | [xcode-close.applescript](references/xcode-close.applescript) |
 | Tuist SPM integration. Xcode-native vs XcodeProj-based, wrapper target problem, migration steps. | [tuist-spm-integration](references/tuist-spm-integration.md) |
-| xcodebuild error detection. Dual failure detection (exit code + BUILD FAILED grep), test crash detection, CODE_SIGNING_ALLOWED=NO. | [xcodebuild-error-detection](references/xcodebuild-error-detection.md) |
+| xcodebuild error detection. Three-way verification (exit code + failure marker + success marker present), test crash detection, CODE_SIGNING_ALLOWED=NO. | [xcodebuild-error-detection](references/xcodebuild-error-detection.md) |
 | CLI distribution signing. exportArchive cloud signing needs an Xcode-accounts OAuth session, not an ASC API key; do not mint local distribution certs as a workaround. | [cli-distribution-signing](references/cli-distribution-signing.md) |
 
 ### Swift Coding Style (App Context)

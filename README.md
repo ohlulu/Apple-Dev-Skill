@@ -48,9 +48,9 @@ Three domains unified under a single Topic Router. Reference files load on deman
 | xcode-project-setup | Workspace layout, synced folders, SPM deps, app identity, shared schemes, gotchas |
 | xcconfig | Hierarchy, naming, inline vs file, Xcode upgrade SOP |
 | build-phases | SwiftFormat hook, SwiftLint, Firebase Crashlytics, sandboxing |
-| makefile | Design principles, simulator destination, run target |
+| makefile | Recipe-vs-script split, simulator vs device targeting, DerivedData strategy, result verification |
 | tuist-spm-integration | Native vs XcodeProj-based, migration steps |
-| xcodebuild-error-detection | Dual failure detection pattern |
+| xcodebuild-error-detection | Three-way result verification, test crash detection |
 
 ### Swift Coding Style
 
@@ -107,6 +107,7 @@ apple-dev-skill/
     uiview-representable.md
     view-wrapping.md
     xcconfig.md
+    xcode-close.applescript
     xcode-project-setup.md
     xcodebuild-error-detection.md
     zoomable-image-preview.md

@@ -6,21 +6,26 @@ xcodebuild incremental builds can return **exit code 0** even when a source file
 
 ## Required Pattern
 
-Every xcodebuild wrapper script must use **dual failure detection**:
+Every xcodebuild wrapper script must verify the result three ways — exit code, failure marker, and *presence* of the success marker:
 
 ```bash
 xcodebuild build ... 2>&1 | tee /tmp/xc-build.log | grep -E "error:|\*\*" || true
 
 EXIT=${PIPESTATUS[0]}
-if [ $EXIT -ne 0 ] || grep -q "BUILD FAILED" /tmp/xc-build.log; then
+if [ $EXIT -ne 0 ] \
+   || grep -qF "** BUILD FAILED **" /tmp/xc-build.log \
+   || ! grep -qF "** BUILD SUCCEEDED **" /tmp/xc-build.log; then
   echo "BUILD FAILED"
   exit 1
 fi
 ```
 
-Both conditions are necessary:
+All three conditions are necessary:
 - `PIPESTATUS[0]` catches most failures
 - `grep BUILD FAILED` catches incremental build edge cases where exit code is 0
+- A missing `BUILD SUCCEEDED` marker catches the case neither of the others can: a build that dies before compiling anything (missing scheme, locked DerivedData, bad destination) writes no failure line either, so a check that only greps for failure lets it through
+
+Name the log after the working directory (`"${TMPDIR:-/tmp/}$(basename "$PWD")-build.log"`) rather than a fixed `/tmp` path. Parallel builds in sibling git worktrees otherwise overwrite each other's logs, and the verification greps then read the wrong build's result.
 
 ## Consistency Rule
 
@@ -45,8 +50,10 @@ Required pattern when verifying a test run:
 xcodebuild test ... 2>&1 | tee /tmp/xc-test.log
 EXIT=${PIPESTATUS[0]}
 
-# Crashes — the signal that something exploded inside the bundle
-grep -E "Restarting after unexpected exit|crashed|SIGABRT|EXC_BAD_ACCESS" /tmp/xc-test.log
+# Crashes — the signal that something exploded inside the bundle.
+# Deliberately excludes a bare `crashed`: the host app's own runtime logging
+# shares this output stream, so that word turns every noisy run red.
+grep -E "Restarting after unexpected exit|SIGABRT|EXC_BAD_ACCESS" /tmp/xc-test.log
 
 # Plus the usual sanity checks
 grep -E "\*\* TEST (SUCCEEDED|FAILED)" /tmp/xc-test.log

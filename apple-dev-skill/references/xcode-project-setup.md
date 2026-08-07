@@ -387,10 +387,10 @@ schemes: [
 
 ## 8. Makefile
 
-Self-documenting, DRY `xc` macro, granular test targets, version management.
+Self-documenting, DRY `xc` macro, parameterised test targets, version management. Recipes over ~10 lines or containing AppleScript belong in `scripts/` — the Makefile is the menu.
 
-Full guide: [makefile.md](makefile.md) — design principles, simulator destination, run target, adaptation checklist.
-Template: [Makefile.template](Makefile.template)
+Full guide: [makefile.md](makefile.md) — recipe-vs-script split, simulator vs physical-device targeting, DerivedData strategy, build result verification, adaptation checklist.
+Template: [Makefile.template](Makefile.template) · Companion: [xcode-close.applescript](xcode-close.applescript)
 
 ---
 

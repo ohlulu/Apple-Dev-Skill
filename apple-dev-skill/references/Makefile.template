@@ -3,17 +3,22 @@
 # ============================================================================
 #
 # Usage:  make            → show help
-#         make test       → run default tests
-#         make test-all   → run all test suites
-#         make release    → test + archive + upload
+#         make gen        → close Xcode + tuist generate
+#         make test       → run tests (ONLY= to narrow)
+#         make run        → build + install + launch on the pinned simulator
+#         make warnings   → show Swift warnings (IDE parity)
+#         make release    → archive + upload (delegates to scripts/)
 #
 # Conventions:
 #   - Every public target has a ## comment above it (shown in `make help`)
-#   - `xc` macro centralises all xcodebuild calls
-#   - Complex operations delegate to scripts/
+#   - `xc` macro centralises all xcodebuild calls and result verification
+#   - Recipes over ~10 lines, or containing AppleScript, live in scripts/
+#
+# Guide: references/makefile.md
 
 .DEFAULT_GOAL := help
 
+# bash required — `set -o pipefail` in the xc macro is not POSIX sh
 SHELL     := /bin/bash
 REPO_ROOT := $(CURDIR)
 
@@ -21,101 +26,94 @@ REPO_ROOT := $(CURDIR)
 # Config — adapt these to your project
 # ---------------------------------------------------------------------------
 
-# Simulator destination (match your deployment target)
-SIM := platform=iOS Simulator,name=iPhone 17 Pro,OS=26.4
+WORKSPACE := {{PROJECT_NAME}}.xcworkspace
+SCHEME    := {{PROJECT_NAME}}
 
-# DerivedData — project-local to avoid cross-project cache pollution
+# Simulator destination. SIM_NAME/SIM_OS are the single source for both the
+# xcodebuild destination ($(SIM)) and simctl UDID resolution ($(SIM_UDID_SH)).
+# Ask the user which device/OS to pin: xcrun simctl list devices available
+SIM_NAME := iPhone 17 Pro
+SIM_OS   := 26.4
+SIM      := platform=iOS Simulator,name=$(SIM_NAME),OS=$(SIM_OS)
+
+# Resolves the pinned sim's UDID. The awk range scopes the search to the
+# $(SIM_OS) runtime section, so a same-named device under another runtime can
+# never win. Use as UDID=$$($(SIM_UDID_SH)); empty result = device missing.
+SIM_UDID_SH := xcrun simctl list devices available | awk '/^-- iOS $(SIM_OS) --/{f=1;next} /^--/{f=0} f' | grep -F '$(SIM_NAME) (' | grep -oE '[0-9A-F-]{36}' | head -1
+
+# Physical-device projects: delete the three vars above, add a sourceable
+# scripts/device-select.sh instead (see references/makefile.md § Physical
+# device selection) and use -destination "id=$$UDID".
+
+# DerivedData — project-local avoids cross-project cache pollution.
+# To share the IDE's cache instead (large projects, 10min+ cold builds):
+# drop -derivedDataPath from the xc macro AND drop -skipMacroValidation,
+# which changes the build-settings fingerprint and forces full rebuilds.
 DD := $(REPO_ROOT)/.derivedData
 
-# Test log directory — project-local, not /tmp (avoids cross-worktree clobber)
-LOGDIR := $(REPO_ROOT)/.test-logs
+# Log directory — nested under DerivedData so `clean` sweeps it automatically
+LOGDIR := $(DD)/logs
 
-# Xcode workspace/project and schemes
-# Uncomment the one that matches your project:
-# XC_WORKSPACE := -workspace MyApp.xcworkspace
-# XC_PROJECT   := -project MyApp.xcodeproj
+# Lines streamed to the screen while a build runs; everything goes to the log.
+ERROR_PATTERN := error:|BUILD FAILED|TEST FAILED|Testing failed
+# Crash markers only — a bare `crashed` matches the host app's own runtime
+# logging on the same stream and turns every noisy run red.
+CRASH_PATTERN := Restarting after unexpected exit|SIGABRT|EXC_BAD_ACCESS
 
-# Tuist: auto-generated schemes to remove after `tuist generate`
-# UNWANTED_SCHEMES := \
-# 	MyApp.xcworkspace/xcshareddata/xcschemes/Generate\ Project.xcscheme \
-# 	MyApp.xcworkspace/xcshareddata/xcschemes/MyApp-Workspace.xcscheme
-
-# Version source (pick one, delete the others)
+# Version source (pick one, delete the other)
+# --- xcconfig ---
+VERSION_FILE := $(REPO_ROOT)/App/Configs/{{PROJECT_NAME}}.xcconfig
+READ_VERSION  = grep '^MARKETING_VERSION' $(VERSION_FILE) | sed 's/.*= *//'
+SET_VERSION   = sed -i '' 's/^MARKETING_VERSION = .*/MARKETING_VERSION = $(VERSION)/' $(VERSION_FILE)
+READ_BUILD    = grep '^CURRENT_PROJECT_VERSION' $(VERSION_FILE) | sed 's/.*= *//'
+SET_BUILD     = sed -i '' 's/^CURRENT_PROJECT_VERSION = .*/CURRENT_PROJECT_VERSION = $(1)/' $(VERSION_FILE)
 # --- Tuist (Project.swift) ---
 # VERSION_FILE := $(REPO_ROOT)/Project.swift
 # READ_VERSION = grep 'let marketingVersion' $(VERSION_FILE) | sed 's/.*"\(.*\)".*/\1/'
 # SET_VERSION  = sed -i '' 's/let marketingVersion = ".*"/let marketingVersion = "$(VERSION)"/' $(VERSION_FILE)
 # READ_BUILD   = grep 'let currentProjectVersion' $(VERSION_FILE) | sed 's/[^0-9]//g'
 # SET_BUILD    = sed -i '' 's/let currentProjectVersion = ".*"/let currentProjectVersion = "$(1)"/' $(VERSION_FILE)
-# --- xcconfig (Base.xcconfig) ---
-# VERSION_FILE := $(REPO_ROOT)/App/Configurations/Base.xcconfig
-# READ_VERSION = grep '^MARKETING_VERSION' $(VERSION_FILE) | sed 's/.*= *//'
-# SET_VERSION  = sed -i '' 's/^MARKETING_VERSION = .*/MARKETING_VERSION = $(VERSION)/' $(VERSION_FILE)
-# READ_BUILD   = grep '^CURRENT_PROJECT_VERSION' $(VERSION_FILE) | sed 's/.*= *//'
-# SET_BUILD    = sed -i '' 's/^CURRENT_PROJECT_VERSION = .*/CURRENT_PROJECT_VERSION = $(1)/' $(VERSION_FILE)
+
+# Xcode IDE DerivedData — resolved at runtime for `warnings` target parity
+XCODE_DD = $(shell find ~/Library/Developer/Xcode/DerivedData -maxdepth 1 -name '$(SCHEME)-*' -type d 2>/dev/null | head -1)
 
 # ---------------------------------------------------------------------------
 # xc macro — DRY xcodebuild runner
 # ---------------------------------------------------------------------------
 # $(1) log-name
-# $(2) working-dir
-# $(3) extra xcodebuild flags (-scheme, -project, -only-testing, etc.)
-# $(4) action (default: test)
-# $(5) derivedData override (default: DD)
+# $(2) scheme
+# $(3) action (default: test)
+# $(4) extra xcodebuild flags (optional, e.g. -only-testing:... -configuration Release)
+#
+# Green requires all three: exit 0, success marker present, no crash marker.
+# Exit code alone lies — incremental builds can exit 0 after a compile error,
+# and a crashed test bundle can exit 0 while printing TEST SUCCEEDED.
 define xc
 	@mkdir -p $(LOGDIR); \
-	echo "⏳ xcodebuild $(or $(4),test) …"; \
-	cd $(2) && xcodebuild \
-	  $(3) \
-	  -derivedDataPath "$(or $(5),$(DD))" \
+	LOG=$(LOGDIR)/$(1).log; \
+	echo "⏳ xcodebuild $(or $(3),test) [$(2)] … (full log: $$LOG)"; \
+	set -o pipefail; \
+	xcodebuild \
+	  -workspace $(WORKSPACE) \
+	  -scheme $(2) \
 	  -destination '$(SIM)' \
+	  -derivedDataPath "$(DD)" \
 	  -skipMacroValidation \
-	  $(or $(4),test) \
-	  > $(LOGDIR)/$(1).log 2>&1; \
+	  $(4) \
+	  $(or $(3),test) 2>&1 \
+	  | tee "$$LOG" \
+	  | { grep --line-buffered -E '$(ERROR_PATTERN)' || true; }; \
 	RESULT=$$?; \
-	grep -E "(✘|✔ Test run|TEST SUCCEEDED|TEST FAILED|BUILD SUCCEEDED|BUILD FAILED)" $(LOGDIR)/$(1).log || true; \
-	if [ $$RESULT -ne 0 ]; then \
+	if [ $$RESULT -ne 0 ] \
+	   || grep -qE '\*\* (BUILD|TEST) FAILED \*\*' "$$LOG" \
+	   || ! grep -qE '\*\* (BUILD|TEST) SUCCEEDED \*\*' "$$LOG" \
+	   || grep -qE '$(CRASH_PATTERN)' "$$LOG"; then \
 	  echo ""; \
-	  echo "  ❌ full log → $(LOGDIR)/$(1).log"; \
+	  echo "  ❌ full log → $$LOG"; \
+	  exit 1; \
 	fi; \
-	exit $$RESULT
+	echo "✅  $(1) ok"
 endef
-
-# ---------------------------------------------------------------------------
-# Xcode window management (Tuist projects)
-# ---------------------------------------------------------------------------
-# Close only THIS project's Xcode window before regeneration.
-# Safe no-op if Xcode isn't running or window not found.
-# Replace "{{PROJECT_NAME}}" with actual project name.
-CLOSE_XCODE_WINDOW := osascript \
-  -e 'tell application "System Events"' \
-  -e '  if not (exists process "Xcode") then return' \
-  -e '  tell process "Xcode"' \
-  -e '    set found to false' \
-  -e '    repeat with w in (every window)' \
-  -e '      if name of w starts with "{{PROJECT_NAME}}" then' \
-  -e '        set found to true' \
-  -e '        exit repeat' \
-  -e '      end if' \
-  -e '    end repeat' \
-  -e '    if not found then return' \
-  -e '  end tell' \
-  -e 'end tell' \
-  -e 'tell application "Xcode"' \
-  -e '  set doc to missing value' \
-  -e '  repeat with d in (every workspace document)' \
-  -e '    if name of d starts with "{{PROJECT_NAME}}" then' \
-  -e '      set doc to d' \
-  -e '      exit repeat' \
-  -e '    end if' \
-  -e '  end repeat' \
-  -e '  if doc is missing value then return' \
-  -e '  try' \
-  -e '    stop doc' \
-  -e '  end try' \
-  -e '  delay 0.5' \
-  -e '  close doc' \
-  -e 'end tell'
 
 # ===========================================================================
 # Targets
@@ -129,51 +127,120 @@ CLOSE_XCODE_WINDOW := osascript \
 install:
 	tuist install
 
-## Close Xcode and regenerate project
+## Close this project's Xcode window and regenerate (no-op if Xcode is closed)
 generate gen:
-	@$(CLOSE_XCODE_WINDOW) 2>/dev/null || true
+	@osascript scripts/xcode-close.applescript "$(REPO_ROOT)/" 2>/dev/null || true
 	tuist generate
-#	@rm -f $(UNWANTED_SCHEMES)
-#	@echo "Removed unwanted workspace schemes."
 
 ## Regenerate workspace and open in Xcode
-# Adapt the path to your actual workspace/project file.
 open: generate
-	@open MyApp.xcworkspace
+	@open $(WORKSPACE)
 
 # ---------------------------------------------------------------------------
 # Test
 # ---------------------------------------------------------------------------
 
-## Run SPM package tests (fastest feedback loop)
+## Run tests. ONLY="AppTests/LoginTests" narrows scope (space-separated for several)
 test:
-	$(call xc,package,., \
-	  -scheme MyPackage)
+	$(call xc,test,$(SCHEME),test,$(foreach t,$(ONLY),-only-testing:$(t)))
 
-## Run Xcode project tests
-test-xcode:
-	$(call xc,xcode,., \
-	  $(XC_PROJECT) -scheme MyApp -only-testing:MyAppTests)
-
-## Run all tests (SPM + Xcode)
-test-all: test test-xcode
-
-# Per-module targets — add as needed:
-# ## Run CoreModule tests only
+# Named targets earn their place when a scope has its own identity (a module's
+# scheme, or the CI gate). Everything else is a job for ONLY=.
+# ## Run CoreKit scheme only — fast single-module feedback
 # test-core:
-# 	$(call xc,core,Packages/Core, \
-# 	  -scheme Core-Package -only-testing:CoreTests)
+# 	$(call xc,core,CoreKit)
+
+## Run every test bundle (CI gate)
+# test-all: test test-core
+
+# ---------------------------------------------------------------------------
+# Build & run
+# ---------------------------------------------------------------------------
+
+## Build for the pinned simulator (Debug)
+## NOTE: must stay signed. CODE_SIGNING_ALLOWED=NO strips the
+## application-identifier entitlement and simulator securityd then rejects every
+## Keychain call with -34018 — credentials read as nil and writes fail silently.
+## That flag is only safe on compile-check targets that are never installed.
+build:
+	$(call xc,build-debug,$(SCHEME),build,-configuration Debug)
+
+## Build Release — compile check only, never installed
+build-release:
+	$(call xc,build-release,$(SCHEME),build,-configuration Release CODE_SIGNING_ALLOWED=NO)
+
+## Build + install + launch on the pinned simulator (auto-boots it when shut down)
+## Targets $(SIM_NAME) by explicit UDID — never `booted`, which resolves to
+## whatever sim happens to be up and can silently reject the install.
+run: build
+	@UDID=$$($(SIM_UDID_SH)); \
+	if [ -z "$$UDID" ]; then \
+	  echo "❌ simulator '$(SIM_NAME)' (iOS $(SIM_OS)) not found — create it in Xcode > Devices"; exit 1; \
+	fi; \
+	APP=$(DD)/Build/Products/Debug-iphonesimulator/$(SCHEME).app; \
+	if [ ! -d "$$APP" ]; then \
+	  echo "❌ build artifact not found: $$APP"; exit 1; \
+	fi; \
+	BID=$$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$$APP/Info.plist"); \
+	xcrun simctl bootstatus "$$UDID" -b >/dev/null 2>&1 || { \
+	  echo "❌ failed to boot '$(SIM_NAME)' ($$UDID)"; exit 1; }; \
+	open -g -a Simulator; \
+	xcrun simctl install "$$UDID" "$$APP" && \
+	xcrun simctl launch "$$UDID" "$$BID"
+
+# ---------------------------------------------------------------------------
+# Format & warnings
+# ---------------------------------------------------------------------------
+
+## Format all Swift files
+format:
+	@swiftformat .
+
+## Check formatting (no write)
+format-check:
+	@swiftformat --lint .
+
+## Show Swift warnings (clean build against Xcode's DerivedData, for IDE parity)
+## Only needed under project-local DerivedData; shared-cache projects see IDE
+## diagnostics already and can just clean-build.
+warnings:
+	@if [ -z "$(XCODE_DD)" ]; then \
+	  echo "⚠️  No Xcode DerivedData found. Open $(WORKSPACE) in Xcode first."; \
+	  exit 1; \
+	fi; \
+	mkdir -p $(LOGDIR); \
+	echo "⏳ clean build (Xcode DerivedData) …"; \
+	xcodebuild clean build \
+	  -workspace $(WORKSPACE) \
+	  -scheme $(SCHEME) \
+	  -destination '$(SIM)' \
+	  -derivedDataPath "$(XCODE_DD)" \
+	  -configuration Debug \
+	  > $(LOGDIR)/warnings.log 2>&1; \
+	BUILD_EXIT=$$?; \
+	if [ $$BUILD_EXIT -ne 0 ] \
+	   || grep -qF '** BUILD FAILED **' $(LOGDIR)/warnings.log \
+	   || ! grep -qF '** BUILD SUCCEEDED **' $(LOGDIR)/warnings.log; then \
+	  echo ""; \
+	  echo "❌  BUILD FAILED — full log → $(LOGDIR)/warnings.log"; \
+	  exit 1; \
+	fi; \
+	grep 'warning:' $(LOGDIR)/warnings.log \
+	  | grep -v 'appintentsmetadata\|libtool' \
+	  | sort -u; \
+	COUNT=$$(grep 'warning:' $(LOGDIR)/warnings.log \
+	  | grep -v 'appintentsmetadata\|libtool' \
+	  | wc -l | tr -d ' '); \
+	echo ""; echo "✅  $$COUNT warning(s)"
 
 # ---------------------------------------------------------------------------
 # Version
 # ---------------------------------------------------------------------------
 
-## Bump marketing version (reset build to 1)
-## Usage: make bump VERSION=1.2
+## Bump marketing version (resets build to 1).  Usage: make bump VERSION=1.1
 bump:
 	@if [ -z "$(VERSION)" ]; then \
-		echo "❌  Usage: make bump VERSION=1.2"; \
-		exit 1; \
+	  echo "❌  Usage: make bump VERSION=1.1"; exit 1; \
 	fi
 	@$(SET_VERSION)
 	@$(call SET_BUILD,1)
@@ -186,41 +253,28 @@ bump-build:
 	$(call SET_BUILD,$$NEXT); \
 	echo "✅  build → $$NEXT"
 
+## Print current marketing + build version
+version:
+	@printf "version: %s\nbuild:   %s\n" "$$($(READ_VERSION))" "$$($(READ_BUILD))"
+
 # ---------------------------------------------------------------------------
-# Release pipeline (delegates to scripts/)
+# Release — delegates to scripts/ (Makefile is the menu, scripts/ is the kitchen)
 # ---------------------------------------------------------------------------
 
-## Pre-flight: git status + version + ASC dashboard
-preflight:
-	@scripts/preflight.sh
-
-## Validate submission readiness
-validate:
-	@scripts/validate.sh
-
-## Run tests → archive → upload to App Store Connect
-release: test-all
+## Archive + upload to App Store Connect (gate first: make test)
+## Facts and deviations live in docs/RELEASING.md.
+release:
 	@scripts/release.sh
-
-## Wait for build processing → submit for review
-## Env: POLL_TIMEOUT=900 make submit  (default: 600s)
-submit:
-	@scripts/submit.sh
-
-## Create and push git tag from current version
-tag:
-	@scripts/tag.sh
 
 # ---------------------------------------------------------------------------
 # Housekeeping
 # ---------------------------------------------------------------------------
 
-## Remove DerivedData, Tuist cache, and test logs
-# Uses `trash` (brew install trash) so mistakes are recoverable.
-# Each path is guarded with `[ -d ]` to protect against empty variables.
+## Remove DerivedData, Tuist cache, and logs
+# `trash` (brew install trash) so mistakes are recoverable; each path guarded
+# with [ -d ] so an empty variable can never expand into a bare rm target.
 clean:
-	@[ -d "$(DD)" ] && trash "$(DD)" && echo "  trashed $(DD)" || true
-	@[ -d "$(LOGDIR)" ] && trash "$(LOGDIR)" && echo "  trashed $(LOGDIR)" || true
+	@[ -d "$(DD)" ] && trash "$(DD)" && echo "  trashed $(DD) (incl. logs)" || true
 	@tuist clean 2>/dev/null || true
 	@echo "✅  clean."
 
@@ -232,9 +286,9 @@ clean:
 help:
 	@awk '/^##/{if(!d){sub(/^## ?/,"");d=$$0};next} /^[a-zA-Z0-9_-]+( [a-zA-Z0-9_-]+)*:/{if(d){sub(/:.*/,"",$$1);printf "  \033[36m%-16s\033[0m %s\n",$$1,d};d=""} !/^##/{d=""}' $(MAKEFILE_LIST)
 
-
-.PHONY: help install generate gen open \
-        test test-xcode test-all \
-        bump bump-build \
-        preflight validate release submit tag \
+.PHONY: help \
+        install generate gen open \
+        test build build-release run \
+        format format-check warnings \
+        bump bump-build version release \
         clean
