@@ -130,7 +130,9 @@ Two viable strategies, opposite trade-offs. Pick deliberately — the choice con
 
 **If you share DerivedData with the IDE, CLI flags must not change the build-settings fingerprint.** `-skipMacroValidation` and `CODE_SIGNING_ALLOWED=NO` both do, and each alternating CLI/IDE build then triggers a full rebuild — the exact cost sharing was meant to avoid. Adding such a flag is not a local decision: it forces the project onto local DerivedData.
 
-Sharing also means the two builds serialize on one lock, so a CLI build started while Xcode is compiling simply waits. When that becomes frequent, add an opt-in `DD=` override that switches to a local path, keeping shared as the default.
+Sharing also means the two builds serialize on one lock, so a CLI build started while Xcode is compiling simply waits. When that becomes frequent, add an opt-in `DD=` override that switches to a local path while the project keeps sharing by default.
+
+[Makefile.template](Makefile.template) ships project-local, since it is the safer starting point: correct on any project size, and it cannot be broken by a flag change. Switch to sharing when cold-build cost actually hurts.
 
 ## Build Result Verification
 
@@ -257,8 +259,11 @@ Needed only under the project-local DerivedData strategy. When CLI and IDE share
 With separate caches, the `xc` macro's log redirection hides warnings and the two incremental caches disagree — the CLI can report 0 warnings while Xcode shows dozens. A dedicated target clean-builds against Xcode's DerivedData:
 
 ```makefile
-# Xcode IDE DerivedData — resolved at runtime
-XCODE_DD = $(shell find ~/Library/Developer/Xcode/DerivedData -maxdepth 1 -name '$(SCHEME)-*' -type d 2>/dev/null | head -1)
+# Xcode IDE DerivedData for this exact workspace. Match on the WorkspacePath
+# recorded in each candidate's info.plist — see below for why a name glob isn't enough.
+XCODE_DD = $(shell for d in ~/Library/Developer/Xcode/DerivedData/$(basename $(WORKSPACE))-*; do \
+	  [ "$$(/usr/libexec/PlistBuddy -c 'Print :WorkspacePath' "$$d/info.plist" 2>/dev/null)" = "$(REPO_ROOT)/$(WORKSPACE)" ] && echo "$$d" && break; \
+	done)
 
 ## Show Swift warnings (clean build against Xcode's DerivedData, for IDE parity)
 warnings:
@@ -286,6 +291,8 @@ warnings:
 ```
 
 Clean build is essential — incremental builds cache stale diagnostics and report 0 warnings even when issues exist. Adjust the `grep -v` noise filter for the project's own non-actionable warnings. The success-marker check matters here more than anywhere: a failed build produces a log with no `warning:` lines, and without it the target prints a triumphant `✅ 0 warning(s)`.
+
+**Resolve the IDE's DerivedData by workspace path, never by `-name '<project>-*' | head -1`.** The directory suffix is a hash of the workspace's absolute path, so a new directory appears for every location the project has occupied — git worktrees, a `/tmp` clone made for a baseline comparison, a repo that moved. A real machine had four `DingPOS-*` directories, two of them pointing at `/tmp` checkouts. `head -1` returns whichever the filesystem lists first, so the target silently clean-builds a stale copy and reports another checkout's warnings. Each directory's `info.plist` records its `WorkspacePath`; comparing against it is deterministic and degrades to empty when nothing matches, which the `[ -z ... ]` guard already handles.
 
 ## Clean & Destructive Ops
 

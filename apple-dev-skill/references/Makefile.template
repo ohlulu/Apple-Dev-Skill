@@ -74,8 +74,15 @@ SET_BUILD     = sed -i '' 's/^CURRENT_PROJECT_VERSION = .*/CURRENT_PROJECT_VERSI
 # READ_BUILD   = grep 'let currentProjectVersion' $(VERSION_FILE) | sed 's/[^0-9]//g'
 # SET_BUILD    = sed -i '' 's/let currentProjectVersion = ".*"/let currentProjectVersion = "$(1)"/' $(VERSION_FILE)
 
-# Xcode IDE DerivedData — resolved at runtime for `warnings` target parity
-XCODE_DD = $(shell find ~/Library/Developer/Xcode/DerivedData -maxdepth 1 -name '$(SCHEME)-*' -type d 2>/dev/null | head -1)
+# Xcode IDE DerivedData for this exact workspace, for `warnings` target parity.
+# Match on the WorkspacePath in each candidate's info.plist, not on the name:
+# the directory suffix hashes the workspace's absolute path, so a stale entry
+# accumulates for every location the project has lived at (worktrees, /tmp
+# clones). `-name '<project>-*' | head -1` would pick an arbitrary one and
+# clean-build a different checkout. Empty when nothing matches — guarded below.
+XCODE_DD = $(shell for d in ~/Library/Developer/Xcode/DerivedData/$(basename $(WORKSPACE))-*; do \
+	  [ "$$(/usr/libexec/PlistBuddy -c 'Print :WorkspacePath' "$$d/info.plist" 2>/dev/null)" = "$(REPO_ROOT)/$(WORKSPACE)" ] && echo "$$d" && break; \
+	done)
 
 # ---------------------------------------------------------------------------
 # xc macro — DRY xcodebuild runner

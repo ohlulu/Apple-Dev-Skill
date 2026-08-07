@@ -419,7 +419,7 @@ Quick reference for common Xcode/Tuist pitfalls:
 | Auto-generated scheme lacks environment config | Use shared schemes via Tuist |
 | Graceful degradation hides config errors | Add `#if DEBUG` assertions for unexpected empty results |
 | xcodebuild incremental build exit 0 despite compile errors | Always double-check: `exit code` AND `grep BUILD FAILED` in log (see below) |
-| CLI `xcodebuild` uses wrong DerivedData → SPM re-fetches all packages every build (timeout / slow) | CLI defaults to `~/Library/Developer/Xcode/DerivedData/<project>-<hash>/` which has empty `SourcePackages/`. Projects with heavy binary packages (Firebase, gRPC — 800MB+) will timeout. Also causes diagnostic mismatches vs IDE. Fix: all `xc-*.sh` scripts must pass `-derivedDataPath` pointing to the same location Xcode GUI uses (e.g. project-local `.derivedData/`). Define once in `xc-env.sh`, reference everywhere |
+| CLI and IDE land on different DerivedData → SPM re-resolves every build (timeout / slow), and warning counts disagree | Whichever DerivedData a build uses must already contain a populated `SourcePackages/`, or SPM re-fetches from scratch — painful with heavy binary packages (Firebase, gRPC, 800MB+). Fix: pick one strategy for the project and apply it in every wrapper — either pin `-derivedDataPath` to a project-local path everywhere, or omit the flag everywhere so CLI shares the IDE's cache. Mixing the two is what causes this. Define it once (Makefile variable or `xc-env.sh`) and reference it. See [makefile.md](makefile.md) § DerivedData Strategy for the trade-off and the flag constraints that come with sharing |
 | `xc-build.sh` vs `xc-build-run.sh` drift | Keep all wrapper scripts identical in error detection logic |
 | Hardcoded bundle ID fails on debug builds | Always read from built `.app/Info.plist` via `PlistBuddy`; debug configs often append `.debug` suffix |
 | Manual `simctl` sequences (install + launch + guess ID) | Use `make run`; one command, zero guessing |
@@ -436,23 +436,29 @@ Quick reference for common Xcode/Tuist pitfalls:
 
 ## 11. Warning Detection
 
-CLI `xcodebuild` with project-local DerivedData (`-derivedDataPath .derivedData`) often produces **zero warnings** while the Xcode IDE shows many. Root cause: different DerivedData paths and incremental build states.
+CLI `xcodebuild` with project-local DerivedData (`-derivedDataPath .derivedData`) often produces **zero warnings** while the Xcode IDE shows many. Root cause: different DerivedData paths and incremental build states. Projects that share the IDE's cache do not have this problem and need no special target.
 
 ### `make warnings` target
 
-Projects should include a `warnings` Makefile target that:
+Under project-local DerivedData, include a `warnings` Makefile target that:
 1. Uses **Xcode's DerivedData** (not project-local) for parity with the IDE
 2. Does a **clean build** to surface all diagnostics
 3. Filters and counts `warning:` lines
 
+Resolve the IDE directory by the `WorkspacePath` in its `info.plist`. The name suffix hashes the workspace's absolute path, so stale directories accumulate for every location the project has lived at (worktrees, `/tmp` clones) and `-name 'MyApp-*' | head -1` picks an arbitrary one — clean-building a different checkout and reporting its warnings.
+
 ```makefile
-XCODE_DD = $(shell find ~/Library/Developer/Xcode/DerivedData -maxdepth 1 -name 'MyApp-*' -type d 2>/dev/null | head -1)
+XCODE_DD = $(shell for d in ~/Library/Developer/Xcode/DerivedData/$(basename $(WORKSPACE))-*; do \
+	  [ "$$(/usr/libexec/PlistBuddy -c 'Print :WorkspacePath' "$$d/info.plist" 2>/dev/null)" = "$(REPO_ROOT)/$(WORKSPACE)" ] && echo "$$d" && break; \
+	done)
 
 warnings:
 	@if [ -z "$(XCODE_DD)" ]; then echo "Open project in Xcode first."; exit 1; fi
 	xcodebuild clean build -workspace ... -derivedDataPath "$(XCODE_DD)" > warnings.log 2>&1
 	grep 'warning:' warnings.log | grep -v 'appintentsmetadataprocessor' | sort -u
 ```
+
+Full target with build-result verification: [makefile.md](makefile.md) § Warnings Target.
 
 ### Agent workflow
 
