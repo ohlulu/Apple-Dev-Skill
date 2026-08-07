@@ -67,6 +67,7 @@ apple-dev-skill/
   SKILL.md
   references/
     alignment.md
+    animated-image-playback.md
     animation.md
     associated-objects.md
     autolayout-spacing.md
