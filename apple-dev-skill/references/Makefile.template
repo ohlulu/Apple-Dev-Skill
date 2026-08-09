@@ -55,7 +55,11 @@ DD := $(REPO_ROOT)/.derivedData
 LOGDIR := $(DD)/logs
 
 # Lines streamed to the screen while a build runs; everything goes to the log.
-ERROR_PATTERN := error:|BUILD FAILED|TEST FAILED|Testing failed
+# `error: ` keeps the trailing space: a bare `error:` also matches Objective-C
+# selectors carrying an `error:` parameter label (`patternForKey:error:` and
+# friends), which the simulator logs on perfectly green runs. Real diagnostics
+# are always `error: <message>`, so the space loses nothing.
+ERROR_PATTERN := error: |BUILD FAILED|TEST FAILED|Testing failed
 # Crash markers. Anchor these to how a crash is REPORTED, not to the signal
 # name: a bare `crashed`, or a bare `SIGABRT`, also matches ordinary logging
 # that merely names the signal. Crashlytics prints "The signal SIGABRT has a

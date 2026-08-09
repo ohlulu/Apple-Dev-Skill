@@ -165,12 +165,13 @@ This applies to any target that inspects a build log, `warnings` included.
 Redirecting the whole build to a log file and grepping after it finishes is fine for short runs, but on a long build it shows nothing until the end — including when it has already failed in the first minute. Stream errors live and keep the full log on disk:
 
 ```sh
-ERROR_PATTERN="error:|BUILD FAILED|TEST FAILED|Testing failed"
+ERROR_PATTERN="error: |BUILD FAILED|TEST FAILED|Testing failed"
 
 set -o pipefail
 xcodebuild ... 2>&1 | tee "$LOG" | { grep --line-buffered -E "$ERROR_PATTERN" || true; }
 ```
 
+- `error: ` keeps the trailing space — a bare `error:` also matches any Objective-C selector carrying an `error:` parameter label, and those appear in ordinary runtime logging on the same stream. `+[CHHapticPattern patternForKey:error:]` alone streams 45 false failures per green iOS test run. Every real diagnostic is `error: <message>`, so the space excludes selectors without dropping anything. Same discipline as `CRASH_PATTERN`: grep a known-passing log before trusting either pattern
 - `set -o pipefail` — without it the pipeline reports grep's status and every build looks successful. Requires `SHELL := /bin/bash` in the Makefile
 - `--line-buffered` — grep buffers by block when writing to a pipe, so matches arrive in bursts long after the event without it
 - `|| true` on the grep so a run with zero matches does not itself fail the pipeline
