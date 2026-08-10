@@ -7,16 +7,18 @@ description: >-
   UX talk ("this page", "the push feels wrong", "background should
   be grey") not naming Apple APIs — project type decides, not
   phrasing. Covers UIKit, SwiftUI bridging, Xcode/Tuist setup,
-  xcconfig, build phases, Makefile, Swift conventions.
+  xcconfig, build phases, Makefile, modular architecture, Swift
+  conventions.
   NOT for server-side Swift, Linux Swift, CLI tools, or
   platform-agnostic SPM libs.
   Trigger words: UIKit, UIViewController, UISplitViewController,
   UINavigationController, Auto Layout, UIViewRepresentable, Xcode,
-  xcconfig, Tuist, Makefile, Project.swift, push, transition, sheet,
+  xcconfig, Tuist, SPM, Makefile, Project.swift, feature module,
+  push, transition, sheet,
   popover, tab bar, navigation, keyboard, gesture, animation, layout,
   iPad, iPhone, iOS, iPadOS, macOS app, 畫面, 頁面, 按鈕, 卡片,
   切換, 推, 返回, 底色, 佈局, 動畫, 導航, 工具列, 彈窗,
-  鍵盤, 手勢, 專案設定, 建置設定.
+  鍵盤, 手勢, 專案設定, 建置設定, 模組化, 拆模組.
 ---
 
 # Apple Dev Skill
@@ -139,6 +141,7 @@ Family rule: when a reference is a special case of another, both router rows mus
 | Topic | Reference |
 |-------|-----------|
 | Xcode project setup. Workspace layout, synced folders, SPM deps, cross-project refs, app identity, shared schemes, gotcha checklist. | [xcode-project-setup](references/xcode-project-setup.md) |
+| Modular architecture. Target blueprint (App→Features→Workflows→Services→Core), placement procedure for new code, shared-logic and screen-reuse (API contract) recipes, monolith migration order, anti-pattern table, static/dynamic/mergeable linkage decision. | [modular-architecture](references/modular-architecture.md) |
 | xcconfig hierarchy. Naming convention, inline vs xcconfig split, target-level keys, the Tuist `.recommended` SWIFT_VERSION shadowing trap, Xcode upgrade SOP. | [xcconfig](references/xcconfig.md) |
 | Build phase scripts. SwiftFormat pre-commit hook, SwiftLint pre-build, Crashlytics dSYM upload (all-dSYMs directory rule, Debug collection gating), script sandboxing. | [build-phases](references/build-phases.md) |
 | Makefile. Design principles, recipe-vs-script split, simulator vs physical-device targeting, DerivedData strategy, build result verification, log streaming, parameterised targets, run/warnings targets, adaptation checklist. | [makefile](references/makefile.md) |
