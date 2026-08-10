@@ -2,7 +2,7 @@
 
 How to modularize an app: the target blueprint, a placement procedure for new
 code, standard recipes for shared logic and screen reuse, monolith migration
-steps, and the linkage decision.
+steps, the module physical form, and the linkage decision.
 
 ## When to Apply / Not for
 
@@ -128,6 +128,48 @@ In order; don't skip:
 | Deep chains & hub modules | builds can't parallelize; one edit recompiles the graph | keep the graph wide and shallow; fence invalidation behind stable interfaces |
 | Tests forcing `private` → `internal` | a single module can't enforce encapsulation at boundaries | module boundaries make `public` meaningful again |
 
+## Module Physical Form
+
+Pick by project type; the first match decides — don't mix forms casually:
+
+1. **Generated project (Tuist / XcodeGen) → one module = one Project.**
+   Multiple targets inside a project carry only *facets of the same module*:
+   API + implementation (the feature-contract case), tests, testing/mocks,
+   an example app, platform variants (CoreKit / CoreKitiOS), resources.
+   The test: **targets are compiler boundaries; projects are ownership
+   boundaries.** Two compilation units with one responsibility, one owner,
+   changing in lockstep → same project, separate targets. A new
+   responsibility → a new project. Add facet targets on demand, never
+   ceremonially (see the hyper-modular tax row above). Dependents import
+   targets, not projects: other features depend only on the API target;
+   only the App layer touches the impl target during DI wiring. Wire with
+   cross-project references (see xcode-project-setup.md §3; its
+   when-to-add-a-project table complements this rule).
+2. **Plain Xcode project, no generator → local SPM packages.**
+   `Package.swift` is declarative and merge-friendly; hand-editing pbxproj
+   to add framework targets reinvites the conflicts a generator would have
+   killed. Prefer one package with multiple targets (the graph stays in one
+   manifest); split into separate packages only when release cadence
+   differs.
+3. **Framework targets in a hand-maintained xcodeproj**: only when a module
+   needs what SPM can't express (custom build phases, per-module xcconfig,
+   mergeable libraries, resource-heavy targets) and no generator is in
+   play.
+
+Before choosing SPM, confirm these limits don't block you: coarse
+build-settings control (no xcconfig), SwiftUI previews notoriously flaky
+inside packages, and the only linkage knob is marking a product `.dynamic` —
+mergeable is a framework-target feature.
+
+API contract modules are cheap in every form — an SPM target or framework
+target holding one protocol file. Never skip the contract because "another
+module feels heavy".
+
+Tooling notes: don't start new projects on CocoaPods / Carthage; touch
+Buck / Bazel only if you accept maintaining that complexity forever.
+tuist-spm-integration.md covers third-party SPM dependencies in Tuist
+projects.
+
 ## Linkage Decision
 
 1. **Default static**: fast launch (one Mach-O), dead-code stripping applies.
@@ -141,10 +183,3 @@ In order; don't skip:
    merged in Release for launch speed.
 4. Verify any change with the App Launch instrument; never apply the
    "dynamic-shared-saves-space" dogma unprofiled.
-
-## Tooling
-
-SPM is the default; Tuist fits generated projects (see
-tuist-spm-integration.md for the SPM wiring). Don't start new projects on
-CocoaPods / Carthage. Touch Buck / Bazel only if you accept maintaining that
-complexity forever.

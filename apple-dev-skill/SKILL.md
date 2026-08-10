@@ -141,7 +141,7 @@ Family rule: when a reference is a special case of another, both router rows mus
 | Topic | Reference |
 |-------|-----------|
 | Xcode project setup. Workspace layout, synced folders, SPM deps, cross-project refs, app identity, shared schemes, gotcha checklist. | [xcode-project-setup](references/xcode-project-setup.md) |
-| Modular architecture. Target blueprint (App→Features→Workflows→Services→Core), placement procedure for new code, shared-logic and screen-reuse (API contract) recipes, monolith migration order, anti-pattern table, static/dynamic/mergeable linkage decision. | [modular-architecture](references/modular-architecture.md) |
+| Modular architecture. Target blueprint (App→Features→Workflows→Services→Core), placement procedure for new code, shared-logic and screen-reuse (API contract) recipes, monolith migration order, anti-pattern table, module physical form (one module = one Tuist project vs local SPM packages), static/dynamic/mergeable linkage decision. | [modular-architecture](references/modular-architecture.md) |
 | xcconfig hierarchy. Naming convention, inline vs xcconfig split, target-level keys, the Tuist `.recommended` SWIFT_VERSION shadowing trap, Xcode upgrade SOP. | [xcconfig](references/xcconfig.md) |
 | Build phase scripts. SwiftFormat pre-commit hook, SwiftLint pre-build, Crashlytics dSYM upload (all-dSYMs directory rule, Debug collection gating), script sandboxing. | [build-phases](references/build-phases.md) |
 | Makefile. Design principles, recipe-vs-script split, simulator vs physical-device targeting, DerivedData strategy, build result verification, log streaming, parameterised targets, run/warnings targets, adaptation checklist. | [makefile](references/makefile.md) |
