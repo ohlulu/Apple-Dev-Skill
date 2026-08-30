@@ -85,11 +85,6 @@ What each piece must guarantee, and who owns whom. Skip these and the implementa
     └──► DismissAnimator (close button only)
 ```
 
-Key points the graph encodes:
-- PreviewVC → TransitioningDelegate is **strong** (UIKit's `weak` reference is the trap).
-- TransitioningDelegate → HeroSource is **weak** (HeroSource's owner is the source screen, not us).
-- Animators are not retained across transitions — they hold their own weak source reference.
-
 ### Pan Handler State Contract
 
 | State | Must do | Must NOT do |
@@ -225,7 +220,6 @@ snapshot.frame = source.heroFrame(in: container)   // ← container, NOT window
 container.addSubview(snapshot)
 
 source.heroIsHidden = true   // alpha = 0, NOT isHidden = true
-// (isHidden = true triggers layout invalidation in stack views; alpha avoids it)
 
 UIView.animate(withDuration: duration, ...) {
   snapshot.frame = targetFrame
@@ -301,9 +295,9 @@ private func commitPanDismiss(snapshot: UIImageView) {
   } completion: { [weak self] _ in
     guard let self else { return }
     self.heroSource?.heroIsHidden = false
-    self.dismiss(animated: false) {       // ← animated: false, NOT true
+    self.dismiss(animated: false) {
       snapshot.removeFromSuperview()
-      if self.panSnapshot === snapshot {  // ← re-entry guard
+      if self.panSnapshot === snapshot {
         self.panSnapshot = nil
       }
     }
@@ -353,15 +347,7 @@ scrollView.contentInsetAdjustmentBehavior = .never
 
 ### Fact 7: Third-Party VC With Self-Set `transitioningDelegate` Trap
 
-Some libraries set `self.transitioningDelegate = self` in their `init` and provide a custom dismiss animator that **reparents the presenter view into the transition container**. This is safe when the presenter is `.fullScreen` (same size + container, no visual divergence) but breaks any other presentation style: after dismiss the presenter view never returns to its actual container, and the user sees a blank screen.
-
-Confirmed example: [TOCropViewController#486](https://github.com/TimOliver/TOCropViewController/issues/486). The library's transition does:
-
-```objc
-[containerView insertSubview:previousController.view belowSubview:cropViewController.view];
-```
-
-If the presenter is `.formSheet`, the form sheet's view detaches from its container and never goes back — blank presenter after dismiss.
+Some libraries set `self.transitioningDelegate = self` in their `init` and provide a custom dismiss animator that **reparents the presenter view into the transition container**. This is safe when the presenter is `.fullScreen` (same size + container, no visual divergence) but breaks any other presentation style: after dismiss the presenter view never returns to its actual container, and the user sees a blank screen (TOCropViewController's crop-completion dismiss animator is one example).
 
 **Fix at the call site**:
 

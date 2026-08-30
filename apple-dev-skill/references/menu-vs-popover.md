@@ -1,9 +1,5 @@
 # UIMenu vs UIPopover — Selection Pattern Decision
 
-## Overview
-
-When a user must pick one option from a list, UIKit offers two primary presentation mechanisms: `UIMenu` (context menu) and `UIPopoverPresentationController`. Choosing the wrong one leads to sizing bugs, unnecessary code, or poor platform consistency.
-
 ## Decision Rule
 
 Ask these questions in order. Stop at the first match.
@@ -21,13 +17,6 @@ Ask these questions in order. Stop at the first match.
 
 ## UIMenu
 
-### When to use
-
-- Picking from a fixed set of options (sort order, date format, filter, display mode)
-- Options are text, optionally with SF Symbol / image
-- Current selection needs a checkmark
-- ≤ ~15 items (system scrolls automatically beyond that)
-
 ### Strengths
 
 - **Zero sizing issues** — system renders and positions automatically
@@ -35,6 +24,7 @@ Ask these questions in order. Stop at the first match.
 - **Sub-menus** — nested `UIMenu(children:)` for hierarchical options
 - **Haptic + blur backdrop** — free
 - **Minimal code** — attach to any `UIButton` or `UIBarButtonItem`
+- **≤ ~15 items** — system scrolls automatically beyond that
 
 ### Implementation pattern
 
@@ -62,16 +52,9 @@ To rebuild the menu when selection changes, reassign `button.menu` with updated 
 
 ## UIPopover
 
-### When to use
-
-- Content contains custom UI (color picker, font preview, filter panel with toggles)
-- Multi-step interaction before dismissal (adjust → preview → confirm)
-- Complex layout (multi-column, rich media, embedded scroll views)
-- Brand-specific visual treatment required
-
 ### Strengths
 
-- **Full custom UI** — any `UIViewController` as content
+- **Full custom UI** — any `UIViewController` as content, including brand-specific visual treatment
 - **Stays open** — user can interact without auto-dismiss
 - **Dynamic sizing** — update `preferredContentSize` to animate height changes
 

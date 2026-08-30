@@ -59,8 +59,6 @@ func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
 | `Task {}` (from `@MainActor` context) | Swift 6+; inherits main actor, no `@Sendable` friction |
 | `DispatchQueue.main.async` | Pre-Swift 6 or when ordering with other main-queue work matters |
 
-Both defer to the next run-loop iteration. `Task {}` is friendlier with Swift 6 strict concurrency because it doesn't require `@Sendable` closures.
-
 ## Coordinator Callback Pattern
 
 The coordinator outlives any single `updateUIView` call. Store callbacks on the coordinator and refresh them in `updateUIView`:
@@ -207,13 +205,3 @@ func loadThumbnail(from storage: ImageStorageService, path: String) async -> UII
 }
 ```
 
-## Common Pitfalls
-
-| Symptom | Cause | Fix |
-|---|---|---|
-| "Modifying state during view update" warning | Delegate callback modifies `@State` synchronously | Wrap in `Task {}` or `DispatchQueue.main.async` |
-| Infinite `updateUIView` loop | `updateUIView` sets a property that fires a delegate, which modifies state, which triggers `updateUIView` | Diff before mutating; only set when value actually changed |
-| Stale callbacks in delegate | Coordinator captured `parent` struct at `makeCoordinator` time, never updated | Update callbacks in `updateUIView` via `context.coordinator` |
-| View recycling shows wrong image | Async load completes after view reused for different content | Check item identity before applying image |
-| Annotations flicker on every camera change | `updateUIView` removes all + re-adds all annotations | Diff-based sync: only add new, remove stale |
-| Programmatic camera fit treated as user gesture | Delegate callback doesn't distinguish source | Pending-counter pattern: increment before `setRegion`, decrement in delegate |

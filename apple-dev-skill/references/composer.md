@@ -7,9 +7,7 @@ Use a dedicated composer or factory when a UIKit screen needs more wiring than a
 Goal:
 - instantiate the screen in one place
 - keep `UIViewController` focused on rendering and user events
-- build the UI hierarchy inside the screen type in code
 - wire loaders, callbacks, and navigation handlers at the edge
-- return a ready-to-display controller
 - keep scene/root composition thin
 
 ## Decision Rule
@@ -41,8 +39,6 @@ A composer typically does **not** own:
 - business rules
 - persistence or network policy
 - view rendering logic
-- building subviews or constraints itself
-- starting side effects during composition
 
 ## Screen Composer Skeleton
 
@@ -80,7 +76,7 @@ public final class FeedUIComposer {
 
 `FeedLoaderAdapter` stands for the UI-specific bridge between controller callbacks and the injected loaders. The composer creates that bridge, but the bridge owns the loading flow.
 
-If the screen is a plain `UIViewController` subclass, initialize it directly and let that type build its hierarchy in `viewDidLoad()` or a dedicated `setupUI()` path.
+If the screen is a plain `UIViewController` subclass, initialize it directly instead of introducing a composer.
 
 ## Navigation Wiring
 
@@ -166,7 +162,6 @@ The scene layer decides navigation structure. Each screen composer decides how i
 ## Hard Rules
 
 - Do not trigger loaders during composition. Wait for lifecycle or user action.
-- Avoid retain cycles when wiring closures back into navigation or loaders.
 - Keep view hierarchy creation inside the screen type; the composer should choose initializers and wiring, not assemble subviews.
 - Return a controller that is ready to display without more external mutation.
 
@@ -208,18 +203,6 @@ Composers are easiest to verify through wiring tests:
 - simulate user actions on the composed screen instead of calling adapter internals
 - keep scene composition tests at the scene/root level
 
-## Generation Checklist
-
-Before shipping a new composer or navigation wiring:
-
-- [ ] Composer justified — the screen has ≥2 collaborators, callback wiring, or adapters (otherwise direct init)
-- [ ] No loaders triggered during composition — side effects wait for lifecycle or user action
-- [ ] View hierarchy built inside the screen type, not the composer
-- [ ] Navigation closures carry data out; ≥2 callback parameters → collapsed into one result enum
-- [ ] No retain cycles in closure wiring (weak references where closures point back)
-- [ ] Returned controller is display-ready without further external mutation
-- [ ] Every bootstrap/configure path from a recreated controller is idempotent — second call must not reset shared session state
-
 ## Warning Signs
 
 The composition boundary is drifting when:
@@ -227,5 +210,4 @@ The composition boundary is drifting when:
 - a view controller fetches app dependencies directly
 - the composer starts rendering or mapping view models itself
 - the same controller initialization and callback wiring is duplicated across call sites
-- a navigation closure accepts two or more `@escaping` callback parameters (closure-of-closures)
 - a screen shows its loading state every time the user switches back to it — a recreated controller is probably resetting shared state on bootstrap

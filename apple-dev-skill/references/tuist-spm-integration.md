@@ -47,7 +47,7 @@ let package = Package(
 
 - Tuist resolves packages and generates **Xcode targets** for each SPM product
 - Binary xcframeworks get **wrapper static framework targets** with modulemaps
-- These wrapper targets may compile source files from the upstream package (e.g., `dummy.m`)
+- These wrapper targets may compile source files from the upstream package (e.g., `dummy.m`) — see "The Wrapper Target Problem" below
 
 ## The Wrapper Target Problem
 
@@ -73,7 +73,7 @@ Xcode 26 introduced a **native compilation cache** (`COMPILATION_CACHE_ENABLE_CA
 
 XcodeProj-based integration now only adds overhead:
 - Generates wrapper targets for every SPM product
-- Binary xcframework wrappers compile empty `dummy.m` → `libtool: warning: 'dummy.o' has no symbols` on Xcode 26.4+
+- Binary xcframework wrappers compile empty `dummy.m` — see "The Wrapper Target Problem" above for the resulting `libtool` warning
 - More generated Xcode projects to maintain
 - No caching benefit over Xcode native
 

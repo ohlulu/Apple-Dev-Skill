@@ -153,12 +153,3 @@ switchToggleHandler = { [weak self] isOn in
 ```
 
 **Important**: the viewModel's state-change method should NOT call `onDataChanged` (which triggers full `applySnapshot` → cell rebuild). The toggle handler manages UI updates directly with proper timing.
-
-## Common Mistakes
-
-| Mistake | Symptom | Fix |
-|---------|---------|-----|
-| `animatingDifferences: true` with `reconfigureItems` on cells containing UISwitch | Switch becomes rectangle during animation | Use `performBatchUpdates` + `isHidden` instead of cell rebuild |
-| `invalidateLayout()` in compositional layout | Cell expands but cards below don't move — overlap | Use `performBatchUpdates` for re-measurement |
-| `cell.configure(with:)` inside `UIView.animate` | New views animate from (0,0) — content jumps | Don't rebuild cell in animation; use `appendRowHidden` + `revealLastRow` |
-| `onDataChanged` → `applySnapshot` during switch toggle | Switch animation interrupted by full cell rebuild | Remove `onDataChanged` from state-change method; handle UI update in toggle handler |

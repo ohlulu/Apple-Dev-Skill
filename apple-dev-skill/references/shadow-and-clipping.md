@@ -30,8 +30,6 @@ UICollectionView         clipsToBounds = true (expected — scroll clipping)
             └─ CardView  clipsToBounds = false, shadow configured
 ```
 
-The collection/table view itself clips (for scrolling), but its cells and content views must not clip if their children need visible shadows.
-
 ## Shadow Needs Space
 
 A shadow with `shadowOffset = (0, 4)` and `shadowRadius = 12` extends roughly 16pt below the layer and 12pt on each side. The shadowed view must have enough margin from its clipping ancestor's bounds for the shadow to be visible.
@@ -74,8 +72,6 @@ content.clipsToBounds = true
 container.addSubview(content)
 // Pin content edges to container edges
 ```
-
-This pattern applies to: app icon with shadow, card views, avatar images, any rounded element that also needs elevation.
 
 ## CALayer Frame Ownership — Each View Manages Its Own Layers
 
@@ -202,6 +198,8 @@ private final class QtyBadgeView: UIView {
 }
 ```
 
+Setting `shadowPath` is a correctness *and* a performance fix: without it Core Animation re-derives the shadow shape from the layer's alpha channel every frame, which shows up as shadows flickering during scroll. A cached path removes the per-frame work.
+
 ### Rule of thumb
 
 - **Need a coloured fill with `cornerRadius`?** Use a plain `UIView` container. Never paint the fill via `UILabel.backgroundColor`.
@@ -254,14 +252,3 @@ private func applyTheme() {
 - Views where the scroll view intentionally has a different background color
 - Pre-iOS 26 (no `UIDropShadowView` in the hierarchy)
 
-## Diagnostic Checklist
-
-| Symptom | Likely cause |
-|---------|-------------|
-| Shadow invisible, card background visible | An ancestor has `clipsToBounds = true` |
-| Both shadow and background invisible | `backgroundColor` never set (deferred theme not called) |
-| Shadow visible on sides but clipped at bottom | Insufficient bottom margin for shadow extent |
-| Shadow flickers during scroll | Shadow is recalculated per frame — set `shadowPath` for performance |
-| Gradient/shape layer invisible on first display, appears after navigate-back | Layer frame set from a parent's `layoutSubviews` reading a deep child's bounds (still zero). Move layer to a subclass that manages it in its own `layoutSubviews` |
-| Subtle color seam between search bar area and scroll content (iOS 26 sheet) | Scroll view has same opaque backgroundColor as root view — set scroll view to `.clear` |
-| UILabel pill renders as a sharp rectangle despite `cornerRadius` + `backgroundColor` | UILabel paints its background into the layer's contents bitmap, which `cornerRadius` does not clip unless `masksToBounds = true` (and that would clip the shadow). Wrap the label in a plain UIView container that owns the shape |

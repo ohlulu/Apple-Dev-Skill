@@ -10,8 +10,6 @@ Goal:
 - tie async work to UIKit lifecycle
 - preserve stable identity during diffable updates
 
-For simple lists, prefer direct `UITableViewDiffableDataSource`, `UICollectionViewDiffableDataSource`, `CellRegistration`, or a focused view controller.
-
 ## Design Intent
 
 The pattern exists to solve one problem: **a growing `switch indexPath` in a view controller that mixes cell creation, async loading, cancellation, and selection for many different cell types.**
@@ -550,34 +548,7 @@ let id = AnyHashable(self.id)
 hasher.combine(id)
 ```
 
-```swift
-// Production-ready Swift 6 CellController
-struct CellController {
-    let id: any Hashable & Sendable
-    let dataSource: UITableViewDataSource
-    let delegate: UITableViewDelegate?
-    let prefetching: UITableViewDataSourcePrefetching?
-
-    init(id: any Hashable & Sendable, _ dataSource: UITableViewDataSource) {
-        self.id = id
-        self.dataSource = dataSource
-        self.delegate = dataSource as? UITableViewDelegate
-        self.prefetching = dataSource as? UITableViewDataSourcePrefetching
-    }
-}
-
-extension CellController: nonisolated Equatable {
-    nonisolated static func == (l: CellController, r: CellController) -> Bool {
-        AnyHashable(l.id) == AnyHashable(r.id)
-    }
-}
-
-extension CellController: nonisolated Hashable {
-    nonisolated func hash(into hasher: inout Hasher) {
-        hasher.combine(AnyHashable(id))
-    }
-}
-```
+The full Swift 6-safe `CellController` shape — existential `id`, `nonisolated` `Equatable`/`Hashable` — is shown under Default Row Wrapper above; apply the same two fixes there.
 
 Downstream traps when adopting this in an existing project:
 - Call sites passing `"some-string"` as the id keep working — String is Hashable & Sendable.
@@ -663,20 +634,12 @@ catalog of UIKit / CALayer animations that fire without an explicit
 
 ## Common Pitfalls
 
-**Silent delegate failure** — A row controller conforms to `UITableViewDelegate` and implements `trailingSwipeActionsConfigurationForRowAt`. It compiles, tests pass, but swipe actions never appear. Root cause: the container does not forward that method. Fix: check the dispatch manifest before implementing any delegate method in a row controller.
-
 **Force-unwrapping dequeued cells** — Two valid stances:
 
 - **Force-unwrap + test coverage** (Essential Developer approach): registration errors are programmer mistakes that should crash immediately. Snapshot and integration tests exercise `cellForRowAt` — if registration is wrong, the test suite crashes, never ships. A `guard let` returning a blank cell is arguably worse: silent visual degradation in production that no test catches. This stance is valid when the dequeue path has comprehensive test coverage.
 - **Defensive dequeue** (generic helper returning non-optional `T`): the dequeue helper itself handles the force-cast (`as! T`), so call sites use the result directly without `!`. Example: `let cell: MyCell = tableView.dequeueReusableCell()` → use `cell` as a local non-optional, assign to the weak `self.cell` separately.
 
 Both are acceptable. Pick one and be consistent across the project. If using the force-unwrap stance, ensure every cell type has at least one test that triggers `cellForRowAt`.
-
-**Stale cell reference** — A row controller holds `private var cell: MyCell?` for async updates. If `didEndDisplaying` or `prepareForReuse` does not nil it out, a later async callback writes to a reused cell showing different content.
-
-**Identity drift** — Using `UUID()` as `CellController.id` on every refresh defeats diffable diffing. Items flash-reload instead of animating. Use domain identity (model ID) so the same logical item keeps its controller across updates.
-
-**Over-applying the pattern** — A screen with one static cell type and no async work does not need row controllers. The indirection adds files and dispatch hops with zero benefit. See Warning Signs below.
 
 ## Generation Checklist
 
@@ -690,15 +653,6 @@ Run this checklist when generating new row/item controllers or modifying a conta
 - [ ] Identity uses a stable domain value, not a transient `UUID()`
 - [ ] Dequeued cells: either use local non-optional variable, or force-unwrap with test coverage on the `cellForRowAt` path
 - [ ] The pattern is justified — the list actually has heterogeneous cells or per-row async lifecycle
-
-## Warning Signs
-
-The pattern is too heavy when:
-- most controllers are one-line pass-through wrappers with no behavior
-- the screen would be clearer with direct registrations and a small diffable data source
-- protocols expand just to satisfy a few advanced sections
-- trivial screens require jumping through many layers to debug basic behavior
-- the container still contains a large `switch indexPath`
 
 ## UITableView Gotchas
 

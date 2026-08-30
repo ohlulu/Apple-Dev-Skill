@@ -53,8 +53,7 @@ func adaptivePresentationStyle(
 }
 ```
 
-Set the delegate **before** presenting. The popover presentation controller's
-delegate must be assigned before `present(_:animated:)` is called.
+Set the delegate **before** presenting `present(_:animated:)`.
 
 ## Sizing with `preferredContentSize`
 
@@ -131,9 +130,8 @@ Use `.any` unless you have a specific layout reason to constrain direction.
 
 ## Tap Target Size
 
-Apple HIG minimum: 44×44pt. For inline info buttons where 44pt feels too
-large, 40×40pt is the practical minimum. Never go below — small targets
-cause mis-taps and frustrate users.
+For inline info buttons where the HIG's 44×44pt minimum feels too
+large, 40×40pt is the practical minimum. Never go below.
 
 The visual icon can be smaller (e.g. 18pt) while the button frame remains
 40×40pt. UIButton handles hit-testing on the full frame.
@@ -144,11 +142,3 @@ Add a tap gesture on the popover's view for tap-to-dismiss. The popover
 also auto-dismisses on outside taps when using `.popover` presentation style
 with `adaptivePresentationStyle` returning `.none`.
 
-## Checklist
-
-- [ ] Content pinned to `safeAreaLayoutGuide` (not `view`)
-- [ ] `adaptivePresentationStyle` returns `.none` for iPhone popover
-- [ ] `preferredContentSize` calculated via `label.sizeThatFits` (NOT `view.systemLayoutSizeFitting`)
-- [ ] Arrow direction `.any` (unless constrained by design)
-- [ ] Info button tap target ≥ 40×40pt
-- [ ] Delegate assigned before `present()`

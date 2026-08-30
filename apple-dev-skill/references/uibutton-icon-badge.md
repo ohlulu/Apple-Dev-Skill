@@ -44,6 +44,8 @@ NSLayoutConstraint.activate([
 ])
 ```
 
+Set `badge.layer.cornerRadius` in `layoutSubviews` (or after constraints resolve), not at creation time — the badge's bounds aren't final until Auto Layout has run, so a radius computed from `badgeSize` at init time can be stale if the badge is later resized.
+
 ### Why `.custom` Instead of `.system`
 
 | Aspect | `.system` | `.custom` |
@@ -80,11 +82,3 @@ This replicates the `.system` type's fade but without its layout side effects.
 
 For standard-sized buttons (≥ 44pt) where you want Configuration's built-in styles, use `UIButton.Configuration` normally — the inset issue is negligible at that size. See [uibutton-configuration](uibutton-configuration.md) for that API.
 
-## Checklist
-
-- [ ] `UIButton(type: .custom)`, never `.system` for icon badges
-- [ ] Icon is a **subview** UIImageView, not `setImage(_:for:)`
-- [ ] `icon.isUserInteractionEnabled = false` so touches reach the button
-- [ ] `badge.clipsToBounds = true` for the circular mask
-- [ ] Manual highlight via `touchDown` / `touchUp` target actions
-- [ ] `cornerRadius` set in `layoutSubviews` (or after constraints resolve) so it tracks dynamic sizing

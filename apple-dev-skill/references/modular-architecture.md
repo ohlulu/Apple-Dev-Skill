@@ -120,8 +120,6 @@ In order; don't skip:
 
 | Anti-pattern | Symptom | Fix |
 |---|---|---|
-| Core / Shared grab-bag | every feature imports it; it holds everything | split by responsibility into Services |
-| One-off shim protocol | a cross-feature bridge existing for a single call site | replace with an API contract (recipe above) |
 | Service stranded in the app target | lower layers reach it only via awkward dependency inversion | extract into a Services module |
 | Sibling services importing each other | changing one service ripples into another | lift the cross-service flow into a Workflow |
 | Hyper-modular tax | 5–8 targets per feature; single-screen features pay full price | add targets only when previews / example apps / swappable impls are actually needed |

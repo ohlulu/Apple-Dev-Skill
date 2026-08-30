@@ -143,8 +143,6 @@ Downstream consequence to state in the helper's doc comment: a `UIControl` tap n
 | Pattern | Problem |
 |---------|---------|
 | Adjusting the view's frame or transform | Breaks Auto Layout; doesn't survive rotation |
-| Observing `willShow` + `willHide` separately | Misses resize events; race conditions on rapid focus changes |
 | Hardcoding keyboard height | Varies by device, locale, input accessory, and predictive bar state |
 | Forgetting to restore insets | Scroll view stays inset after keyboard hides |
-| Applying overlap without checking baseline | Overwrites tab bar / safe area bottom inset |
-| Background-tap dismisser that fires on control taps | `endEditing` relays out the screen before the control's `touchesEnded` arrives, so the control reports `.touchUpOutside` and the tap is silently swallowed |
+| Background-tap dismisser that fires on control taps | See [Background-Tap Dismissers Must Ignore Controls](#background-tap-dismissers-must-ignore-controls) above |

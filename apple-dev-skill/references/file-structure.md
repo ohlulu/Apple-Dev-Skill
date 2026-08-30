@@ -149,23 +149,8 @@ class AvatarView: UIView {
 // MARK: - Layout
 private extension AvatarView {
     func setupUI() {
-        addSubview(imageView)
-        addSubview(badgeView)
-
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        badgeView.translatesAutoresizingMaskIntoConstraints = false
-
-        NSLayoutConstraint.activate([
-            imageView.topAnchor.constraint(equalTo: topAnchor),
-            imageView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            imageView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            imageView.bottomAnchor.constraint(equalTo: bottomAnchor),
-
-            badgeView.widthAnchor.constraint(equalToConstant: 12),
-            badgeView.heightAnchor.constraint(equalToConstant: 12),
-            badgeView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            badgeView.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
+        // addSubview + NSLayoutConstraint.activate, laid out against self —
+        // same shape as the view controller example above
     }
 }
 ```
@@ -209,22 +194,8 @@ class AvatarCell: UITableViewCell {
 // MARK: - Layout
 private extension AvatarCell {
     func setupUI() {
-        contentView.addSubview(avatarView)
-        contentView.addSubview(nameLabel)
-
-        avatarView.translatesAutoresizingMaskIntoConstraints = false
-        nameLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        NSLayoutConstraint.activate([
-            avatarView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-            avatarView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            avatarView.widthAnchor.constraint(equalToConstant: 48),
-            avatarView.heightAnchor.constraint(equalToConstant: 48),
-
-            nameLabel.leadingAnchor.constraint(equalTo: avatarView.trailingAnchor, constant: 12),
-            nameLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
-            nameLabel.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-        ])
+        // Same shape as above, but every addSubview and anchor targets
+        // contentView — never self.
     }
 }
 ```
@@ -262,27 +233,6 @@ Within any scope (main declaration or extension), order members by access level:
 3. `private`
 
 **Exception**: when two members have a strong logical relationship (e.g., a public method and its private helper), keep them together regardless of access level.
-
-## Complete File Structure Summary
-
-```
-┌─────────────────────────────────────────┐
-│ class Foo: SuperClass, Protocols        │
-│                                         │
-│   internal properties (direct init / lazy)│
-│   private properties                    │
-│   init / lifecycle methods              │
-│                                         │
-├─────────────────────────────────────────┤
-│ extension Foo  // Protocol A methods    │
-├─────────────────────────────────────────┤
-│ extension Foo  // Protocol B methods    │
-├─────────────────────────────────────────┤
-│ private extension Foo  // Actions       │
-├─────────────────────────────────────────┤
-│ private extension Foo  // Layout (LAST) │
-└─────────────────────────────────────────┘
-```
 
 This structure applies uniformly to `UIViewController`, `UIView`, `UITableViewCell`, `UICollectionViewCell`, and other UIKit subclasses. Type-specific lifecycle methods (`viewDidLoad`, `layoutSubviews`, `prepareForReuse`) sit in the lifecycle section of the main declaration.
 

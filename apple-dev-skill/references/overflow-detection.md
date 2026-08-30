@@ -98,18 +98,6 @@ let fits = totalValueWidth <= available
 
 Font metrics from `NSString.size(withAttributes:)` don't account for UIButton.Configuration padding, contentInsets, or layout margins. The only reliable measurement is the one Auto Layout performs.
 
-### ❌ Checking `bounds.height` Before Child Layout Completes
-
-```swift
-override func layoutSubviews() {
-    super.layoutSubviews()
-    // ❌ flowView may not have arranged its items yet
-    if flowView.bounds.height > threshold { ... }
-}
-```
-
-Call `flowView.layoutIfNeeded()` first, or use `intrinsicContentSize` which is recalculated during layout.
-
 ### ❌ Static `maxVisibleItems` Constants
 
 ```swift
@@ -117,13 +105,3 @@ private static let maxVisibleValues = 2  // ❌ arbitrary, device-dependent
 ```
 
 What fits on an iPhone 17 Pro Max won't fit on an SE. Use actual layout, not item count thresholds.
-
-## Summary
-
-| Step | What Happens |
-|------|-------------|
-| Configure | Show all content, no overflow UI, set `pendingOverflowCheck = true` |
-| First layout pass | Real width established, child arranges items |
-| `layoutSubviews` | Measure actual height vs single-line threshold |
-| If overflows | Async callback → collapse to preferred-only + show chevron |
-| If fits | No action — all content stays visible, no chevron |

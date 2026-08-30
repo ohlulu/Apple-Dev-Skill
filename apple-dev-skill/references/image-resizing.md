@@ -91,17 +91,7 @@ Use this when loading user photos from disk (camera roll, file imports) for disp
 
 ## Template Icon Resizing
 
-For small vector icons (PDF assets, Tabler icons) used in buttons and toolbars, `UIGraphicsImageRenderer` is the correct choice:
-
-```swift
-static func sized(_ image: UIImage?, _ side: CGFloat) -> UIImage? {
-    guard let image else { return nil }
-    let size = CGSize(width: side, height: side)
-    return UIGraphicsImageRenderer(size: size).image { _ in
-        image.draw(in: CGRect(origin: .zero, size: size))
-    }.withRenderingMode(.alwaysTemplate)
-}
-```
+For small vector icons (PDF assets, Tabler icons) used in buttons and toolbars, `UIGraphicsImageRenderer` is the correct choice — same `UIGraphicsImageRenderer(size:).image { draw(in:) }` pattern as the Display Resize section above, with the result passed through `.withRenderingMode(.alwaysTemplate)` so the icon tints with `tintColor` instead of rendering its own fixed colors.
 
 This is correct because:
 - PDF icons are small — no memory concern, no performance concern.

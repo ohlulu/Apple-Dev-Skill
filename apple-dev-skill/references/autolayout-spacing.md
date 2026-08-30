@@ -110,15 +110,6 @@ But this is complex and fragile. **`setCustomSpacing` + separate top/bottom pinn
 
 ## Common Pitfalls
 
-### ❌ Spacer Views with Required Min + Max
-
-```swift
-// Creates unsolvable constraints when available space > content + (N × max)
-spacer.heightAnchor >= 4      // required
-spacer.heightAnchor <= 20     // required
-stack.bottom == safeArea.bottom // required
-```
-
 ### ❌ `distribution = .fillEqually` for Variable-Height Content
 
 `.fillEqually` forces all arranged subviews to the same height. Use `.fill` (default) and let intrinsic content sizes determine heights.
@@ -129,11 +120,4 @@ UIStackView spacing is additive. Negative values create visual overlap but cause
 
 ## Shadow + Corner Radius (Cross-Reference)
 
-When building card-like layouts with shadows, remember the parent/child split rule. See [shadow-and-clipping](shadow-and-clipping.md) for the full pattern:
-
-```swift
-// Shadow on parent (clipsToBounds = false)
-// Corner radius on child (clipsToBounds = true)
-```
-
-This is often needed alongside spacing decisions because cards with shadows require margin space from their clipping ancestor. Use `setCustomSpacing` or wrapper view insets to provide that margin.
+When building card-like layouts with shadows, remember the parent/child split rule (shadow on the parent with `clipsToBounds = false`, corner radius on the child with `clipsToBounds = true`) — see [shadow-and-clipping](shadow-and-clipping.md) for the full pattern. This is often needed alongside spacing decisions because cards with shadows require margin space from their clipping ancestor. Use `setCustomSpacing` or wrapper view insets to provide that margin.

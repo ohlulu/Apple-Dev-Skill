@@ -124,6 +124,8 @@ The snapshot retains the old card's appearance and size for the entire slide-out
 | ScrollView `content ≡ frame @ defaultLow` bridge | `systemLayoutSizeFitting` collapses to 0 → clamp fallback → no real measurement |
 | Snapshot + reparent of outgoing child | Outgoing child still pins container.top/bottom → Cassowary compromise during transition |
 | `view.layoutIfNeeded()` before the animation block | New container height inside the animation block → height gets tweened |
+| Snapshot parented under `containerView` instead of `view` | Snapshot moves / shrinks when the container resizes — reparent into `self.view` and convert frame: `view.convert(oldVC.view.bounds, from: oldVC.view)` |
+| Snapshot left in tree after completion | Hit-testable invisible overlay blocks taps on the new card — always `snapshot.removeFromSuperview()` in animation completion |
 
 ## Decision Tree
 
@@ -134,25 +136,8 @@ Need to swap a sized child inside a fixed-position card?
 │     No height work needed.
 │
 └─ Children have different natural heights?
-   ├─ 1. Replace implicit height with explicit `containerHeightConstraint` @ defaultHigh
-   ├─ 2. Each child: add `content ≡ frame @ defaultLow` to its scrollView
-   ├─ 3. Compute newPreferredHeight via `systemLayoutSizeFitting`
-   ├─ 4. Snapshot outgoing child → reparent under `view`
-   ├─ 5. Remove outgoing child VC from container
-   ├─ 6. Update constraint constant + `view.layoutIfNeeded()` (OUTSIDE animation)
-   └─ 7. Animation block: centerX + snapshot transform/alpha only
+   └─ See The Three-Part Solution above.
 ```
-
-## Common Mistakes
-
-| Mistake | Symptom | Fix |
-|---------|---------|-----|
-| Two children both pin `container.top/bottom` with low-priority height preferences | Container settles at a compromise size mid-transition; `layoutIfNeeded` in animate block tweens that compromise | Snapshot the outgoing child and reparent it under `view` so only the incoming child constrains container |
-| `containerHeightConstraint.constant = …` inside the animation block | New target height gets animated (height tween) | Update the constant + `layoutIfNeeded()` **before** the animation block; animation block only animates `centerX` / transform |
-| Skipping the scrollView `content ≡ frame @ defaultLow` bridge | `systemLayoutSizeFitting` returns ~0; container collapses to the lower clamp | Add the low-priority equality inside each step VC's scrollView setup |
-| `containerHeightConstraint.priority = .required` | Conflicts with safe-area / keyboard `<=` guards on small screens → unsatisfiable layout | Use `.defaultHigh`; keep the required `<=` cap separate |
-| Snapshot added inside `containerView` instead of `view` | Snapshot moves / shrinks when the container resizes | Reparent into `self.view` and convert frame: `view.convert(oldVC.view.bounds, from: oldVC.view)` |
-| Snapshot left in tree after completion | Hit-testable invisible overlay blocks taps on the new card | Always `snapshot.removeFromSuperview()` in animation completion |
 
 ## See Also
 
