@@ -56,7 +56,7 @@ Three domains unified under a single Topic Router. Reference files load on deman
 
 | Reference | Coverage |
 |-----------|----------|
-| swift-style | Type design, protocols, error handling, API design, file organization |
+| swift-style | Codebase conventions and traps — memberwise-init exclusion, phantom types, typed throws, member placement, MARK rules, error type placement |
 
 Non-opinionated: focuses on correctness and practical patterns, not architecture or code style enforcement.
 

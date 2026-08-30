@@ -63,6 +63,35 @@ Keep examples minimal:
 - Add 1 negative example only when contrast matters
 - Example should clarify the rule, not restate it at length
 
+A second code block that differs from the first only in type names or one
+property is not a second example — it is the first one paid for twice. Show
+the delta as a comment or a sentence instead.
+
+### Say Each Rule Once
+
+A rule lives in exactly one place: the section that carries its mechanism.
+Everywhere else points at that section.
+
+Closing sections — `Checklist`, `Summary`, `Common Pitfalls`, `Warning Signs`,
+`Anti-Patterns` — may only hold items that appear nowhere else in the file, or
+that sequence body rules into an order the body does not impose (a pre-ship
+gate). Reformatting the body as a symptom lookup table is not new information;
+it is the same rule at double cost, and it drifts the moment one copy is edited.
+
+The same applies within a file: a fact stated in an Overview, restated as a
+bullet, and restated again as a checklist item has been paid for three times.
+Keep the occurrence with the "why" attached and delete the others.
+
+### Assume Baseline Competence
+
+Do not restate what the model already produces correctly without being told:
+Apple's API Design Guidelines, the `Optional` / `throws` / `Result` /
+`precondition` severity ladder, protocol-oriented design, `.automaticDimension`,
+type-safe `dequeueReusableCell` wrappers, HIG's 44×44pt minimum.
+
+The test is not "is this true?" but "would the output differ if this line were
+deleted?" Content that fails that test is rent paid on every load.
+
 ## What to Include
 
 ### ✅ Include These Topics:

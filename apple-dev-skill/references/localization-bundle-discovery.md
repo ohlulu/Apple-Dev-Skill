@@ -129,7 +129,6 @@ Prefer the explicit declaration.
 |------------------------------------------------------|--------------|
 | Settings picker present, but selecting a language has no effect | App reads strings via `NSLocalizedString` from `Bundle.main` instead of the framework's bundle. Switch to `Bundle.module` or a typed `L10n.tr(...)` helper bound to the resource bundle. |
 | Picker shows the wrong language name (e.g. "中文" instead of "繁體中文") | `CFBundleLocalizations` entry uses `zh` instead of `zh-Hant`; iOS displays whatever you declare. Match the actual `.lproj` folder. |
-| Picker present on first install, disappears after an update | The update changed `CFBundleLocalizations` or removed an `.lproj`. The Settings cache holds the old snapshot until reinstall. |
 
 ## Checklist
 

@@ -209,8 +209,6 @@ By default, an app's iCloud ubiquity container is **invisible** in the Files app
 
 - App must have `com.apple.developer.icloud-container-identifiers` entitlement with matching container ID
 - Container ID in plist must match entitlement exactly
-- **`FileManager.url(forUbiquityContainerIdentifier:)` must have been called at least once** — this is what actually creates the container on iCloud's servers; the plist only declares visibility intent
-- **The `Documents/` directory must exist** — an empty or non-existent directory means nothing to show in Files app
 
 ### Trap: Plist Alone Does Not Create the Container
 
@@ -256,10 +254,6 @@ This works for both fresh installs and app updates — iOS re-reads Info.plist o
 
 On a new device or after app reinstall, the entire ubiquity container may be empty locally:
 
-1. **Don't trust `FileManager.fileExists`** — use `NSMetadataQuery` to discover remote files
-2. **NSMetadataQuery must be `@MainActor`** — cooperative thread pool has no run loop
-3. **`startDownloadingUbiquitousItem` may take minutes** — show "syncing" UI, not a progress bar
-4. **Use progress-based timeout** — stall detection, not fixed deadline
-5. **Check `ubiquitousItemDownloadingErrorKey`** — detect quota/server/auth failures early
-6. **Provider-specific UI** — don't show "Syncing from iCloud…" for Dropbox/Google Drive restores
-7. **Log `NSError` domain + code** — iCloud errors are not exhaustively documented; preserve the full error for diagnostics
+1. **`startDownloadingUbiquitousItem` may take minutes** — show "syncing" UI, not a progress bar
+2. **Provider-specific UI** — don't show "Syncing from iCloud…" for Dropbox/Google Drive restores
+3. **Log `NSError` domain + code** — iCloud errors are not exhaustively documented; preserve the full error for diagnostics

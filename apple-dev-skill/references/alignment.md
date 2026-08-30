@@ -90,10 +90,3 @@ This captures all internal UIKit metrics (Configuration defaults, minimum hit ta
 
 - Plain `UILabel` with a known fixed font — `font.lineHeight` is reliable.
 - `UIView` with explicit height constraints — the constraint IS the height.
-
-## Decision Checklist
-
-1. **What alignment does the design want?** CenterY (geometric middle) or baseline (text sits on same line)?
-2. **Is the entire view hierarchy Auto Layout?** If not, baseline anchors won't propagate correctly — use centerY with measured heights.
-3. **Do you know the exact height?** If using UIButton.Configuration or complex views, measure a real instance. If plain labels, font metrics are fine.
-4. **Is the offset hardcoded?** Replace with a computed value tied to the actual metric source. Magic numbers drift when fonts, insets, or configurations change.

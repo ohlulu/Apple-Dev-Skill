@@ -6,8 +6,6 @@ General testing principles that apply to UIKit integration tests. For UIKit-spec
 
 ## Test Levels
 
-Use the smallest level that proves the behavior.
-
 1. **Composition / wiring tests** — verify app wiring and navigation setup (window visible, root VC correct, push/present wiring).
 2. **Feature integration tests** — the default for UIKit screens. Real views + loader spies/stubs. Assert rendered UI state.
 3. **Acceptance tests** — small number of end-to-end tests with real collaborators. Keep narrow and high-value.
@@ -25,15 +23,9 @@ This makes UI tests deterministic and lets you verify cancellation rules.
 
 ## Assertion Strategy
 
-Assert what the user would observe:
 - visible title, labels, images
 - loading/error indicator visibility
 - row count, button state
-
-Avoid asserting:
-- private stored properties
-- exact internal call paths
-- implementation details that do not affect user-visible behavior
 
 ## Memory Leak Tracking
 

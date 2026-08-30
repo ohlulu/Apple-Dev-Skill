@@ -5,7 +5,7 @@
 1. **`set -euo pipefail`** at the top — fail on any error
 2. **Check tool existence** before running — `command -v tool >/dev/null 2>&1`
 3. **Fail loudly on critical path** — `exit 1` if binary not found
-4. **Formatters belong in git hooks, not build phases** — build phases format on every build (including archive), leaving uncommitted diffs; pre-commit hooks format only staged files at commit time
+4. **Formatters belong in git hooks, not build phases** — see "Why not a build phase" below
 
 ## SwiftFormat (Pre-Commit Hook)
 
@@ -119,9 +119,7 @@ Note: SwiftLint is often warning-level (exit 0 on missing), not error-level like
 ```
 
 Required flags:
-- `-gsp <path>` — Firebase project association. Without this, console shows 版本=未知.
 - `-p ios` — platform tag. Required in explicit-paths mode (only inferred from env in `--build-phase` mode).
-- `-- "${DWARF_DSYM_FOLDER_PATH}"` — the whole products directory, searched recursively. Do NOT substitute `--build-phase`: it silently narrows the upload to the app's own dSYM.
 
 Tradeoff to keep: explicit-paths mode uploads synchronously and a failed upload fails the archive (`--build-phase` self-backgrounds and never blocks). Synchronous is the right default — an archive whose dSYMs silently failed to upload ships blind.
 
@@ -144,7 +142,6 @@ FIREBASE_CRASHLYTICS_COLLECTION_ENABLED = YES
 The xcconfig-expanded value is a *string*, and that is fine: `FIRCLSDataCollectionArbiter` accepts NSString or NSNumber and calls `boolValue` (verified in SDK source, Firebase 12.x). The key is read before `FirebaseApp.configure()` returns, so no crash-reporting session ever starts in Debug. Priority order: `setCrashlyticsCollectionEnabled(_:)` sticky value > Info.plist key > FirebaseApp `isDataCollectionDefaultEnabled`.
 
 Post-integration checklist:
-- [ ] Audit product types first: every `product: .framework` dependency adds a dSYM the upload must cover
 - [ ] Build succeeds with zero warnings from the script
 - [ ] Archive once and check Crashlytics console dSYM tab within 24h — **verify version metadata matches the build (not 未知/unknown)**, not just that UUIDs appear
 - [ ] No required-missing rows for the version you just shipped — including the dynamic frameworks' UUIDs, not only the app binary

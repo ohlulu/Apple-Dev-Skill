@@ -49,16 +49,7 @@ extension ListViewController {
 
 ## Prefer Semantic Test Helpers
 
-Test helpers should translate UIKit mechanics into feature language.
-
-Prefer helpers like:
-- `simulateUserInitiatedReload()`
-- `simulateFeedImageViewVisible(at:)`
-- `simulateTapOnFeedImage(at:)`
-- `errorMessage`
-- `numberOfRenderedComments()`
-
-Avoid repeating raw index-path, control-event, and layout plumbing in every test.
+Test helpers should translate UIKit mechanics into feature language. Avoid repeating raw index-path, control-event, and layout plumbing in every test.
 
 ## List Composition Test Helpers
 
@@ -160,8 +151,6 @@ Keep these helpers tiny, focused on behavior observation/simulation, and out of 
 
 ## UIKit-Specific Test Guidance
 
-All sections below assume the default testing shape: real composer, lifecycle simulation, rendered-state assertions. They describe **what** to test, not a different **how**.
-
 ### Pull-to-refresh
 - test that refresh starts on first appearance if that is the feature behavior
 - test that user-initiated refresh does not start a duplicate request while one is already running
@@ -226,11 +215,3 @@ static XCTSwiftErrorObservation._observeErrors(in:)
 
 **Log signature:** test N reports `started`, the next line is test N+1
 `started` (no `passed`/`failed` in between), then the bundle aborts.
-
-## Warning Signs
-
-The test strategy is drifting when:
-- most tests mock UIKit instead of driving real screens
-- tests depend on sleeps or timing guesses
-- the same UIKit interaction plumbing is repeated across many tests
-- async cell reuse bugs are left untested in screens that load data per row

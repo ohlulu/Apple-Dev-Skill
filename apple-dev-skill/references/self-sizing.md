@@ -115,30 +115,11 @@ the race.
 | Returns `CGFloat.greatestFiniteMagnitude` | An unconstrained view with no intrinsic height | Add explicit height or pin both top and bottom |
 | Taller than expected | Hidden views still contribute to stack spacing | Use `UIStackView` — it collapses hidden arranged subviews |
 
-### Quick Checklist
-
-- Every subview pins **top** and **bottom** (directly or via stack view).
-- Views with no intrinsic content size have an explicit height constraint.
-- `UIStackView` is preferred — it handles hiding/showing arranged subviews and spacing automatically.
-- Buttons using `UIButton.Configuration` have intrinsic height from content insets. Custom buttons need a min-height constraint (`greaterThanOrEqualToConstant`).
+Buttons using `UIButton.Configuration` have intrinsic height from content insets; custom buttons need a min-height constraint (`greaterThanOrEqualToConstant`).
 
 ## Self-Sizing Table / Collection Cells
 
-The same principle, different entry point. UIKit calls `systemLayoutSizeFitting` on the cell's `contentView` internally when you opt in:
-
-```swift
-tableView.rowHeight = UITableView.automaticDimension
-tableView.estimatedRowHeight = 60
-```
-
-For collection view, use `NSCollectionLayoutSize` with `.estimated()`:
-
-```swift
-let itemSize = NSCollectionLayoutSize(
-    widthDimension: .fractionalWidth(1.0),
-    heightDimension: .estimated(80)
-)
-```
+The same principle, different entry point. UIKit calls `systemLayoutSizeFitting` on the cell's `contentView` internally when you opt in (`tableView.rowHeight = .automaticDimension` / `NSCollectionLayoutSize` with `.estimated()`).
 
 The cell must have a complete vertical constraint chain inside `contentView`. Same rules apply — no gaps, no unconstrained heights.
 
@@ -160,23 +141,10 @@ func computeHeight() -> CGFloat {
 
 Don't override `intrinsicContentSize` just to report a measured height. That property is for views with a natural content size (labels, images). For containers, use `systemLayoutSizeFitting`.
 
-### ❌ Measuring Before View Hierarchy Exists
-
-```swift
-init() {
-    super.init(nibName: nil, bundle: nil)
-    // ❌ No constraints installed yet — measurement is meaningless
-    preferredContentSize = CGSize(width: 400, height: measure())
-}
-```
-
 ## Summary
 
 | Scenario | Technique |
 |----------|-----------|
-| Modal / popover height | `systemLayoutSizeFitting` in `viewDidLoad` → `preferredContentSize` |
-| Table cell height | `automaticDimension` + complete constraint chain in `contentView` |
-| Collection cell height | `.estimated()` layout dimension + complete constraint chain |
 | Embedded child controller | `systemLayoutSizeFitting` on child's view → height constraint on container |
 | Wizard / multi-step card with size-changing children | See [step-transition-sizing.md](step-transition-sizing.md) — measurement + explicit container height + outgoing-child decoupling |
 | Any "how tall is this?" question | `systemLayoutSizeFitting` with fixed width, compressed height |

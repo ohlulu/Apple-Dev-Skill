@@ -4,10 +4,6 @@ Behavior deltas between iOS 18 and iOS 26 (.0 / .1 / .2 / .4) that
 break previously-correct UIKit code. Each entry links to the deeper
 reference where it's discussed; this file is the consolidated index.
 
-iOS 25 was never released — Apple jumped from iOS 18 (2024) to iOS 26
-(2025) to align version numbers with the year. The previous baseline
-is iOS 18.
-
 ## UISplitViewController
 
 ### Sidebar Floats Above Content (Liquid Glass)
@@ -41,7 +37,9 @@ only.
 does not propagate the final bounds + safe-area insets to the
 incoming VC's view *before* the appearance transition begins. Auto
 Layout resolves the real values inside the transition window, and
-every sub-element appears to animate from origin.
+every sub-element appears to animate from origin. Also reported as
+"the detail swap looks animated" — no animation API is actually
+called; it's this same `.zero`-frame layout resolve.
 
 Visible as: gradient banner crossfade, segmented-control pill
 "slide", switch thumb "settle", labels "fade in". These are
@@ -114,22 +112,9 @@ default.
 Apple documents it will be removed). Use only if Liquid Glass is
 breaking the whole design system, not for a single search bar.
 
-## Animation Behavior
-
-### Detail Swap Looks Animated (No API Changed)
-
-**iOS 26.0+** — same root cause as the layout regression above. The
-swap *call* hasn't changed; the *effect* looks animated because of
-the `.zero`-frame layout resolve.
-
-See `implicit-animations.md` → "Sub-Layer Resolution Artifacts
-(iOS 26 regression)" for the diagnostic flow.
-
 ## What Did NOT Change
 
-For honesty, these were assumed to be iOS 26 changes during this
-session's debugging but are actually pre-existing UIKit behavior
-that the team simply noticed for the first time:
+These are pre-existing UIKit behaviors, not iOS 26 changes:
 
 - `CAGradientLayer.colors` implicit crossfade — iOS 7+
 - `UISegmentedControl.selectedSegmentIndex` setter animates the pill
@@ -149,15 +134,9 @@ When you suspect an iOS 26 regression:
 1. **Reproduce on the current simulator runtime** — `xcrun simctl
    list runtimes` to confirm version. The two we encounter:
    `iOS-26-2` (23C54) and `iOS-26-4` (23E244).
-2. **Web research with the exact API name** — e.g. "iOS 26
-   UISplitViewController setViewController animation". Apple
-   Developer forums and Stack Overflow have hit most of these.
-3. **Check darjeelingsteve.com / blog posts dated 2025-09 to 2025-12**
+2. **Check darjeelingsteve.com / blog posts dated 2025-09 to 2025-12**
    — high signal source for iOS 26 UIKit regressions.
-4. **Apple release notes** — `https://developer.apple.com/documentation/ios-ipados-release-notes/`
-   for the relevant point release. Often confirms a regression by
-   listing the *fix* in a later release.
-5. **If installing iOS 18 sim runtime is feasible** — `xcodebuild
+3. **If installing iOS 18 sim runtime is feasible** — `xcodebuild
    -downloadPlatform iOS` or via Xcode → Settings → Components.
    ~7GB / ~30 min. Provides a real A/B test.
 

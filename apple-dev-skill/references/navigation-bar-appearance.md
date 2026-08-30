@@ -126,8 +126,6 @@ This is **not always sufficient** — some configurations (notably `searchBarSty
 2. Inspect view hierarchy in the debugger; the search bar may have `_UIBarBackground` subviews that need separate styling
 3. As last resort, host the search field outside the nav bar entirely (custom toolbar)
 
-This area of UIKit is under-documented and behaviour shifts between iOS versions; expect iteration.
-
 ## iOS 26 — Custom Search Bar Tint Requires Abandoning `UISearchController`
 
 **Rule.** If the design calls for a specific brand-coloured search field (any non-system colour) on a list screen and the deployment target includes iOS 26, do NOT use `navigationItem.searchController`. Use a custom field in the root view from the start.
@@ -243,10 +241,6 @@ scrollView.topAnchor.constraint(equalTo: view.topAnchor)  // NOT safeArea
 
 | Pitfall | Why it's wrong |
 |---------|----------------|
-| Setting `backgroundColor` on iOS 26 | Large title hidden behind background layer |
 | Only setting `standardAppearance` | `scrollEdgeAppearance` defaults to translucent on iOS 15+, causing a flash when scrolling to top |
 | Creating new appearance objects in `viewWillAppear` without guarding | Replaces appearance mid-transition on push/pop, can cause flicker |
 | Using `UINavigationBar.appearance()` globally + per-instance overrides | Global proxy wins on first layout, then per-instance takes over — ordering is unpredictable |
-| UIScrollView without `alwaysBounceVertical` | Large title stuck — no scroll events when content fits in viewport |
-| Setting only `UINavigationBarAppearance.backgroundColor` opaque when an embedded `UISearchBar` is present | Search bar strip stays translucent; cells bleed through it. Set `searchBar.backgroundImage` separately. |
-| Setting all three slots to the same transparent appearance, then wondering why cells are visible behind the nav bar during scroll | iOS scroll views extend under the nav bar by design. Opaque (or frosted) `standardAppearance` is what hides them. |

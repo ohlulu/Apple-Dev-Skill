@@ -58,27 +58,7 @@ If a UIButton using Configuration renders at unexpected size:
 
 ## Dynamic Font Changes
 
-To change font per state (e.g., preferred vs non-preferred):
-
-```swift
-func configure(text: String, isPreferred: Bool, theme: AppTheme) {
-    let font: UIFont = isPreferred
-        ? .systemFont(ofSize: 13, weight: .semibold)
-        : .systemFont(ofSize: 12, weight: .regular)
-
-    var config = UIButton.Configuration.plain()
-    config.title = text
-    config.baseForegroundColor = isPreferred ? theme.textPrimary : theme.textSecondary
-    config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
-        var attrs = incoming
-        attrs.font = font
-        return attrs
-    }
-    configuration = config
-}
-```
-
-Rebuild the entire Configuration each time. Don't try to patch individual properties on an existing configuration — it's cheap and avoids partial-update bugs.
+To change font per state (e.g., preferred vs non-preferred), rebuild the entire `Configuration` each time rather than patching individual properties on the existing one — a fresh `UIButton.Configuration.plain()` plus a new `titleTextAttributesTransformer` is cheap, and patching in place risks stale attributes from the previous state leaking through (e.g. a `.semibold` transformer left active after switching to a non-preferred state that never re-set it).
 
 ## `configurationUpdateHandler` for State-Driven Updates
 

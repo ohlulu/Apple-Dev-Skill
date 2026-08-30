@@ -18,8 +18,6 @@ the iOS version notes for behavior changes.
   this on") should still animate so the affordance reads.
 - **Diff visualization** — `UITableViewDiffableDataSource.apply` with
   `animatingDifferences: true` makes an add/delete/move legible.
-- **Trial → Active subscription** — a *deliberate* state transition
-  earned by a user action.
 
 ## When They Hurt
 
@@ -261,12 +259,8 @@ is innocent. Read both `viewDidLoad`s side-by-side and look for:
 - vs. the cleaner VC binding only after sync setup, OR using only
   async loads (the safe pattern)
 
-Illustration: two detail VC families share the same
-`secondaryNav.setViewControllers([detail], animated: false)` swap path.
-Family A mounts without animation; family B expands from origin. The
-single difference: family B bound `onChange` *before* the synchronous
-`loadSettings()`, family A bound after. The fix is a four-line reorder
-per VC — no swap-mechanism change at all.
+The fix is a reorder inside `viewDidLoad`, never a change to the swap
+mechanism.
 
 ## Sub-Layer Resolution Artifacts (iOS 26 regression)
 
@@ -372,55 +366,41 @@ layer fixes the *previous* symptom and reveals a new one. Pattern:
 **Heuristic**: if you're adding suppression layer N+1, layer N was
 probably already a workaround. Stop and find the real cause.
 
-Steps when this triggers (run cheap-first):
+Steps when this triggers, cheap-first. Each step either kills a
+hypothesis or promotes it, so never skip ahead to writing the fix:
 
-1. **Empty-body test (one build cycle)** — replace the suspect VC's
-   `viewDidLoad` body with `view.backgroundColor = .systemRed` and
-   nothing else. If the symptom disappears, the bug is in the content
-   path, not the swap / appearance mechanism. This eliminates entire
-   hypothesis trees in minutes. See "Bind-Before-Load: The Sync-Fire
-   Trap" → "Diagnostic".
+1. **Empty-body test** — one build cycle, described under
+   "Bind-Before-Load: The Sync-Fire Trap" → "Diagnostic". If the
+   symptom survives an empty `viewDidLoad`, the content path is
+   innocent and entire hypothesis trees die at once.
 2. **Differential check** — find a sibling VC mounted via the same
    path that doesn't show the bug. The difference between them is the
-   cause, even if it looks unrelated to the suspected mechanism.
+   cause, even when it looks unrelated to the suspected mechanism.
    Counterexamples beat correlations.
-3. **Reproduce minimally** — strip the broken VC piece-by-piece. Bisect
-   `viewDidLoad` calls until the trigger is one line. Read that line's
-   transitive code path; the cause is rarely more than two hops away.
-4. **Read vendor changelogs** — Apple Developer release notes / WWDC
-   sessions for the relevant year. Search for the API in the issue.
-5. **Web research** — same Stack Overflow / Twitter / blog post you'd
-   write. Other developers have probably hit this exact case. **But**:
-   a real bug + a real workaround on the internet can match your
-   symptom and still be wrong for your codebase. Validate empirically
-   (step 1) before adopting any community fix. Adopting an off-target
-   fix burns more time than skipping research.
-6. **Geometry logging** — log each suspect view's `frame` / `bounds` /
+3. **Bisect `viewDidLoad`** until the trigger is one line, then read
+   that line's transitive path; the cause is rarely more than two hops
+   away.
+4. **Vendor changelogs and web research** — Apple release notes, WWDC
+   sessions, and the exact API name. A real platform bug with a real
+   community workaround can match your symptom while your trigger is
+   different (a sequencing error vs a platform layout race), so
+   re-validate any adopted fix with step 1. An off-target fix costs
+   more than the ten-minute experiment.
+5. **Geometry logging** — log each suspect view's `frame` / `bounds` /
    `transform` on every layout pass. The numbers tell you WHICH layer
    is resolving WHICH property; visual inspection can't. (Instruments'
    Core Animation profiler answers the same question with animation
    keys + durations — suggest it to the user as a manual step; do not
    attempt to drive it yourself.)
-7. **Compare across iOS versions** if possible — same code, different
-   sim runtime. If iOS 18 doesn't animate and iOS 26 does, it's a
-   platform regression; if both animate, it's your code.
+6. **Compare across iOS versions** — same code, different sim runtime.
+   If iOS 18 doesn't animate and iOS 26 does, it's a platform
+   regression; if both animate, it's your code.
 
-### Investigation rules (why the order above is cheap-first)
-
-- **Re-derive the "why" from current code, not commit messages.** A
-  commit's stated reason can be wrong about why the change worked even
-  when the change itself was correct. Reverting or extending a refactor
-  based on its message alone risks cargo-culting a misdiagnosis.
-- **A research-confirmed platform bug can still be wrong for your
-  symptom.** Real bugs with real workarounds (blog posts, Stack
-  Overflow) can match your symptom while your trigger is different
-  (e.g. a sequencing error vs a platform layout race). Validate with
-  the empty-body test before adopting any community fix — an off-target
-  fix costs more than the ten-minute experiment.
-- **Run the decisive cheap experiment before writing the fix.** If a
-  hypothesis can be killed by changing one number and rebuilding
-  (e.g. raising a layout cap to disengage it), do that first. One
-  build either kills the hypothesis or promotes it.
+One rule that does not fit the ladder: **re-derive the "why" from
+current code, not commit messages.** A commit's stated reason can be
+wrong about why the change worked even when the change itself was
+correct, so extending a refactor on the strength of its message
+cargo-cults a misdiagnosis.
 
 ## Mount-State Hygiene Checklist
 
@@ -435,10 +415,6 @@ For any detail VC, sync or async load:
       reflects the best-known state, not empty
 - [ ] VM is pre-warmed at composer construction time so by the time the
       user arrives the state is usually loaded
-- [ ] Layer-level implicit animations on the view's gradient / status
-      indicator are suppressed via `layer.actions = [... NSNull()]`
-- [ ] `UISwitch` is sync'd with `setOn(_:animated: false)` on initial
-      sync; subsequent user edits use the default animated setter
 - [ ] First diffable apply is gated on `dataSource.snapshot()
       .numberOfItems > 0` (only animate diffs against existing on-screen
       content)
@@ -446,17 +422,12 @@ For any detail VC, sync or async load:
       state-update method — that's a workaround; address the
       animations at the source layer instead
 
-## iOS Version Notes
-
-The behaviors catalogued above are long-standing UIKit/Core Animation
-defaults (`CAGradientLayer.colors` crossfade since iOS 7, segmented
-pill since iOS 13, `UISwitch` thumb since early iOS, diffable
-first-apply insertion animation since introduction). The `.zero`-frame
-settling artifacts are iOS 26 regressions — for the authoritative
-per-version delta table, see `ios-26-behavior-changes.md`.
-
 ## Related References
 
+- `ios-26-behavior-changes.md` — the authoritative per-version delta
+  table. Everything catalogued above is a long-standing UIKit default
+  except the `.zero`-frame settling artifacts, which are iOS 26
+  regressions.
 - `split-view-controller.md` — the iOS 26 setViewController layout
   regression with the load-bearing fix
 - `list-composition.md` → "First-Apply Animation Gate" — diffable apply

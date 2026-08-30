@@ -114,10 +114,6 @@ contentStack.spacing = 20  // applies uniformly — can't vary per section
 contentStack.addArrangedSubview(UIView())  // spacer hack — fragile
 ```
 
-### ❌ Duplicating the Boilerplate
-
-If you see the same create → addSubview → pin pattern more than twice in a file with the same insets, extract it. The wrapper is a single extension method; the section-specific decorator (divider, background) is a local helper.
-
 ### ❌ Over-Abstracting
 
 Don't build a DSL or builder chain. `wrapped(insets:)` is one method that does one thing. Composition with decoration helpers handles the rest.

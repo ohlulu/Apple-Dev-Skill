@@ -113,8 +113,6 @@ Three update APIs on iOS 15+, each with a distinct job:
 | `reloadItems([id])` + apply | Dequeues a brand-new cell; re-runs cellProvider | Changing the cell type, or full rebuild needed |
 | `applySnapshotUsingReloadData(_:)` | Equivalent to legacy `reloadData()`; drops all cached cells | Replacing the whole data set |
 
-Apple's documentation on `reconfigureItems`: "choose to reconfigure items instead of reloading items unless you have an explicit need to replace the existing cell with a new cell."
-
 Apple UIKit engineer Tyler Fox:
 
 > Reload: replaces the existing cell with a new cell.
@@ -245,14 +243,10 @@ Task.detached {
 
 | Pattern | Symptom | Fix |
 |---------|---------|-----|
-| Whole mutable model as ItemIdentifierType (synthesized Hashable), then plain `apply` on content change | Row delete + insert → flicker | Use `reconfigureItems([newItem])` to keep the cell, or switch to Pattern B |
 | Custom `Hashable` comparing only id, model also fed to SwiftUI `ForEach` / `.animation(_:value:)` | SwiftUI can't see content changes, UI doesn't update | Separate identity from content: Pattern B, or a dedicated `Equatable` view-model for SwiftUI |
-| Using `animatingDifferences: false` expecting a full reload | On iOS 15+ it's a lightweight diff; bugs previously masked by reloadData surface | Use `applySnapshotUsingReloadData` when a real reload is intended |
 | Creating `CellRegistration` inside the cellProvider | Crash on iOS 15+ | Hoist the registration to a stored property — see [cell-registration](cell-registration.md) |
 | Driving the same dataSource from multiple threads | Data races / animation glitches | Pin to the main thread, or serialize through an actor |
 | Dequeuing a different cell type during reconfigure | UIKit assertion | Changing cell type requires `reloadItems`, not `reconfigureItems` |
-| Porting a reloadData()-based shell to diffable where `display(_:)` only calls `apply(snapshot)` | Rows whose id is unchanged but content changed (cart quantity, subtotal, row-internal view model) go silently stale — the diff can't see the change | Reconfigure every id to preserve the old "refresh everything on display" contract — but as a **second, non-animated apply**, never folded into the animated one (see the trap above) |
-| `reconfigureItems` folded into an `animatingDifferences: true` apply | A badge / chip renders in the wrong place, overlapping a sibling, and is absent from the accessibility tree | Split into two applies: structure animated, content not |
 | `reconfigureItems([id])` on a selection / setSelected path without filtering ids missing from the snapshot | iOS warning / `NSInternalInconsistencyException` | Before apply: `let known = Set(snap.itemIdentifiers); snap.reconfigureItems(ids.filter { known.contains($0) })` |
 
 ## When to Reach for Diffable

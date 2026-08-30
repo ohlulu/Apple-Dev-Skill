@@ -12,13 +12,11 @@ description: >-
   NOT for server-side Swift, Linux Swift, CLI tools, or
   platform-agnostic SPM libs.
   Trigger words: UIKit, UIViewController, UISplitViewController,
-  UINavigationController, Auto Layout, UIViewRepresentable, Xcode,
-  xcconfig, Tuist, SPM, Makefile, Project.swift, feature module,
-  push, transition, sheet,
-  popover, tab bar, navigation, keyboard, gesture, animation, layout,
-  iPad, iPhone, iOS, iPadOS, macOS app, 畫面, 頁面, 按鈕, 卡片,
-  切換, 推, 返回, 底色, 佈局, 動畫, 導航, 工具列, 彈窗,
-  鍵盤, 手勢, 專案設定, 建置設定, 模組化, 拆模組.
+  UIViewRepresentable, Xcode, xcconfig, Tuist, SPM, Makefile,
+  Project.swift, feature module, push, transition, sheet, popover,
+  tab bar, navigation, keyboard, gesture, animation, layout,
+  畫面, 按鈕, 切換, 返回, 底色, 佈局, 動畫, 導航, 工具列,
+  彈窗, 鍵盤, 手勢, 專案設定, 建置設定, 模組化.
 ---
 
 # Apple Dev Skill
@@ -155,4 +153,4 @@ Family rule: when a reference is a special case of another, both router rows mus
 
 | Topic | Reference |
 |-------|-----------|
-| Swift conventions. Opaque vs existential types, type design, protocols, error handling, API design, file organization. | [swift-style](references/swift-style.md) |
+| Swift conventions specific to this codebase — struct memberwise-init trap, phantom types, typed-throws default, private-member placement, MARK rules, error type placement. Baseline Swift practice is assumed, not restated. | [swift-style](references/swift-style.md) |

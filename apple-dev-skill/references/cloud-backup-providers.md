@@ -33,7 +33,7 @@ files. Backup/restore must tolerate a missing or reorganized folder
 
 > This is the same principle as `NSUbiquitousContainerIsDocumentScopePublic`
 > in [icloud-ubiquity](icloud-ubiquity.md) — apply it uniformly across every
-> provider. New cloud-sync features should adopt visible storage from day one.
+> provider.
 
 ### Find-or-Create the Visible Root, Cache the Id
 
@@ -398,32 +398,3 @@ keep it honest:
 | A backup that lands no manifest — unproducible OR upload failed — **deletes** the remote one (best-effort) | A stale manifest describing a newer snapshot lies; absent beats wrong. The delete must cover the upload-failure path too, not just "never tried" |
 | Readers treat missing / corrupt / future-`schemaVersion` manifests as absent | Display degrades to metadata-only; the manifest must never gate restore or surface an error |
 | Carry `schemaVersion` from day one | Future breaking manifest changes get a version gate without a new filename |
-
-## Checklist for a New Cloud-Sync Feature
-
-1. **Visible storage from day one** — `drive.file` / Dropbox app-folder /
-   `NSUbiquitousContainers`. Never start with a hidden app space.
-2. **Find-or-create** the root folder; cache its id; treat it as user-owned.
-3. Route **403 `insufficientScopes`** → wipe both tokens → full re-consent.
-4. `upload(for:from:)` body via `from:` only — no `httpBody`.
-5. **Atomic publish** — write the bundle, flip a single pointer file last;
-   breaking bundle formats get a NEW pointer namespace (`CURRENT2.json`) so
-   legacy readers never resolve what they can't decode;
-   millisecond-precision version ids.
-6. Add an **idempotent best-effort migration hook** for any future location
-   change; run it on restore; pointer last; leave old data as a safety net.
-7. Progress/completion reflect **durable commit**; explicit finish signal;
-   guard late callbacks.
-8. **Time-box** cleanup; never block completion.
-9. Treat the restore bundle as **untrusted**: basename guard, SHA-256 resume,
-   write gate, atomic swap.
-10. Dedicated **ephemeral session, URLCache fully disabled**; bounded
-    `-1005` retry for POST downloads; curl-replay as the first diagnostic.
-11. **Close live DB connections before the restore file swap**; reopen and
-    re-resolve readers after.
-12. Remote status as explicit state; **list authority as a trait** (iCloud
-    local mirror ≠ server truth); stale-while-revalidate; event-driven
-    display cache; generation token around refresh awaits.
-13. Advisory **manifest uploaded last**, counts from the uploaded
-    artifact (never the live store), failure-tolerant, stale-dropped,
-    schema-versioned.

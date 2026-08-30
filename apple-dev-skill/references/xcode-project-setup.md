@@ -408,27 +408,19 @@ Quick reference for common Xcode/Tuist pitfalls:
 
 | Pitfall | Defense |
 |---------|---------|
-| Recommended settings checker only reads pbxproj, not xcconfig | Split: recommended → inline, custom → xcconfig |
-| `lastXcodeUpgradeCheck` missing → checker always triggers | Set in `Workspace.swift` `generationOptions` |
 | Some recommended keys need target-level, not just project-level | Check diff after "Perform Changes" |
-| SwiftFormat in build phase leaves uncommitted diffs after archive | Use pre-commit hook; never put formatters in build phases |
 | Copy-pasted build scripts break on SDK version update | Pin version in comment; fail loudly on missing binary |
 | Analytics/crash SDK fails silently (no crash, no data) | Check dashboard within 24h post-integration |
-| PBXGroup files not auto-discovered | Use synced folders; verify non-code files in navigator |
-| Resources (xcassets, strings) not auto-discovered by synced folders | Explicit `resources:` entries in Project.swift |
-| Auto-generated scheme lacks environment config | Use shared schemes via Tuist |
 | Graceful degradation hides config errors | Add `#if DEBUG` assertions for unexpected empty results |
 | xcodebuild incremental build exit 0 despite compile errors | Always double-check: `exit code` AND `grep BUILD FAILED` in log (see below) |
 | CLI and IDE land on different DerivedData → SPM re-resolves every build (timeout / slow), and warning counts disagree | Whichever DerivedData a build uses must already contain a populated `SourcePackages/`, or SPM re-fetches from scratch — painful with heavy binary packages (Firebase, gRPC, 800MB+). Fix: pick one strategy for the project and apply it in every wrapper — either pin `-derivedDataPath` to a project-local path everywhere, or omit the flag everywhere so CLI shares the IDE's cache. Mixing the two is what causes this. Define it once (Makefile variable or `xc-env.sh`) and reference it. See [makefile.md](makefile.md) § DerivedData Strategy for the trade-off and the flag constraints that come with sharing |
 | `xc-build.sh` vs `xc-build-run.sh` drift | Keep all wrapper scripts identical in error detection logic |
 | Hardcoded bundle ID fails on debug builds | Always read from built `.app/Info.plist` via `PlistBuddy`; debug configs often append `.debug` suffix |
 | Manual `simctl` sequences (install + launch + guess ID) | Use `make run`; one command, zero guessing |
-| AI-generated app icon has baked-in rounded corners | Always prompt "full-bleed square, no rounded corners/shadow/padding" — iOS applies its own mask |
-| `ASSETCATALOG_COMPILER_APPICON_NAME` set in xcconfig ignored | pbxproj overrides xcconfig; set per-config in Tuist target settings instead |
 | `print()` invisible in `log show` / `log stream` / Console.app | `print()` writes to stdout only — not Unified Logging. Use `Logger` (iOS 14+) or `os_log` for logs capturable outside Xcode. See `systematic-debugging` skill for details |
 | Tuist XcodeProj-based SPM + binary xcframework → `libtool: 'dummy.o' has no symbols` | Use Xcode native integration (`.remote()` in `Project.swift`) for binary xcframework packages. See [tuist-spm-integration.md](tuist-spm-integration.md) |
 | `git commit -- <files>` (pathspec commit) + pre-commit hook `git add` → ghost staged/unstaged diffs | Pathspec commit uses a temporary index; after commit it restores the real index to its pre-commit snapshot, discarding any `git add` the hook performed. Result: HEAD and working tree match, but the index retains stale pre-hook content → phantom staged+unstaged diffs that cancel out. Fix: use `git commit` (index commit) after explicit `git add`; never `git commit -- <files>` when a pre-commit hook calls `git add` |
-| `make build` shows zero warnings but Xcode IDE shows many | CLI and IDE use different DerivedData. `make build` pipes output and may strip diagnostics. Use `make warnings` (clean build with Xcode DerivedData) to see all warnings. Fix: after any task completion, run `make warnings` if the project has the target |
+| `make build` shows zero warnings but Xcode IDE shows many | See § 11 Warning Detection |
 | `contentEdgeInsets` deprecated warning (iOS 15+) | Replace with `UIButton.Configuration.contentInsets` (`NSDirectionalEdgeInsets`) |
 | `NSMetadataQuery` / `NSObjectProtocol` captured in `@Sendable` closure | If access is serialized on main queue (`.main` notification queue + `@MainActor` task), use `nonisolated(unsafe)` on captured vars |
 

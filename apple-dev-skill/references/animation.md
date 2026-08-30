@@ -42,8 +42,6 @@ UIView.animate(withDuration: 0.25, delay: 0, options: .curveLinear) {
 
 ## Curve for Simple Changes: Linear
 
-For tier 1–2 (simple state changes and transitions), use `.curveLinear`. Do not springify a plain show/hide or push unless the user explicitly asks.
-
 ```swift
 // ✅ Simple show/hide — linear
 UIView.animate(withDuration: 0.1, delay: 0, options: .curveLinear) { ... }
@@ -162,7 +160,6 @@ Expand is slower and playful (discovery). Collapse is faster and direct (dismiss
 - Use `isHidden` to toggle subview visibility, not add/remove. Container views like `UIStackView` and `FlowLayoutView` should skip hidden subviews in layout (`where !subview.isHidden`).
 - Store references to collapsible views in an array at configure time.
 - Never call `removeAllItems()` + re-add inside a toggle — that destroys views and can't be animated.
-- Use `setNeedsLayout()` after changing `isHidden` so the container recalculates.
 
 ## Animating Height in Custom Layout Views
 
@@ -624,19 +621,8 @@ This applies to **any** animation where the view must remain in a non-default st
 | `viewDidLoad` | Empty | Layout hasn't run; cells don't exist |
 | `viewWillAppear` | Empty | Same — even with `layoutIfNeeded()` it's a hack |
 | `viewDidAppear` | ✅ Available | Works but fires after push ends — feels late |
-| `willDisplay` | N/A (per-cell) | ✅ Best — fires exactly when each cell appears |
 
 `willDisplay` + `transitionCoordinator.transitionDuration` as base delay = animation starts right when the push transition ends, no lifecycle timing hacks.
-
-### Timing Reference
-
-| Element | Value |
-|---------|-------|
-| Base delay | `transitionCoordinator.transitionDuration` (~0.35s) |
-| Per-item stagger | 0.1s |
-| Card slide-in | 0.4s spring (damping 0.82, velocity 0.3) |
-| Inner content cascade | 0.18s per element, 0.07s gap |
-| Text fade-in | 0.2s, starts 0.21s after card lands |
 
 ## Transform-Safe Positioning
 
@@ -685,14 +671,3 @@ Auto Layout is immune — it sets `bounds` and `center` internally.
 | Text expand (constraint + clip) | 0.4s | Spring (damping 0.85) |
 | Text collapse (constraint + clip) | 0.3s | Spring (damping 0.9) |
 | Springifying a tier 1–2 animation | Only when explicitly requested | Spring |
-
-## Generation Checklist
-
-Before shipping animation code:
-
-- [ ] Tier identified — simple fade (linear 0.1s), transition (linear, case duration), or choreography (spring recipes above)
-- [ ] No spring on plain show/hide/toggle
-- [ ] Stagger delays use `Task.sleep`, never `UIView.animate(delay:)` (model-layer values snap to final state during the delay)
-- [ ] Custom layout views: height precomputed + `setNeedsLayout()` before the animation block; `layoutIfNeeded()` on the nearest scroll ancestor inside it
-- [ ] Views that may carry transforms are positioned with `bounds` + `center`, never `frame`
-- [ ] Text height animation uses constraint + clip container, not `numberOfLines` toggling

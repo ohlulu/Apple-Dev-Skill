@@ -6,13 +6,11 @@ leaves the escape characters as literal text in your UI.
 
 ## What works
 
+Standard escapes (`\n`, `\r`, `\t`, `\"`, `\\`) work as expected. The one
+that trips people up:
+
 | Escape       | Meaning                          |
 |--------------|----------------------------------|
-| `\n`         | newline                          |
-| `\r`         | carriage return                  |
-| `\t`         | tab                              |
-| `\"`         | literal double quote             |
-| `\\`         | literal backslash                |
 | `\Uxxxx`     | Unicode codepoint, 4 hex digits — **capital U** |
 | `\U0001F600` | Unicode codepoint, 8 hex digits  |
 
@@ -60,10 +58,3 @@ grep -rn '\\u[0-9a-fA-F]\{4\}' **/*.strings
 
 If anything turns up, replace with the literal UTF-8 character.
 
-## Checklist
-
-- [ ] Use literal UTF-8 characters for `—`, `…`, `"`, `"`, etc.
-- [ ] Reserve `\Uxxxx` (capital U) for the rare cases where source-level
-      literal characters can't survive the toolchain
-- [ ] CI / pre-commit: grep for `\u[0-9a-fA-F]{4}` in `.strings` to
-      catch the lowercase trap before it ships

@@ -38,7 +38,7 @@ iOS automatically inset `safeAreaLayoutGuide` past the master overlay. No manual
 | Wrap primary in `UINavigationController` with `prefersLargeTitles = true` | Yes | A bare VC as primary triggers an even more aggressive sidebar pill style. The nav controller anchors the column visually. |
 | Call `split.setViewController(_, for: .primary)` before `.secondary` | Yes | Standard ordering. |
 | Set an initial secondary VC (real or placeholder) **before returning the split** | Yes | If secondary is `nil` when the split first appears, iOS commits to a single-column sidebar layout for that lifetime. Setting secondary lazily from `viewDidLoad` is too late. |
-| `preferredSplitBehavior = .tile` | Optional | Honored on iOS 18 and earlier; ignored on iOS 26. Set it anyway as documentation of intent. |
+| `preferredSplitBehavior = .tile` | Optional | Ignored on iOS 26 (see intro). Set it anyway as documentation of intent. |
 | Column affordance policy (if the design hides the toggle) | Optional (regular size class) | If the design calls for it, suppress the auto-inserted column toggle button + edge swipe on iPad full-screen via `presentsWithGesture` / hiding the leading bar button; restore them on compact for accessibility. |
 
 ## Anti-Patterns
@@ -47,7 +47,7 @@ iOS automatically inset `safeAreaLayoutGuide` past the master overlay. No manual
 |---------|--------------|
 | Replace `UISplitViewController` with a custom `HStackView` (master + detail) | Loses system traits: column affordance, compact-size collapse, sheet presentation anchoring. Works for static layouts but breaks Stage Manager / Slide Over. |
 | Drop the `UINavigationController` wrapper on primary | iOS 26 promotes the bare VC to an even more pronounced sidebar pill. The wrapper is **load-bearing**, not just cosmetic chrome. |
-| Set `split.preferredSplitBehavior = .tile` and expect a flush column pair | Setting is accepted but iOS 26 still applies the overlay treatment. |
+| Set `split.preferredSplitBehavior = .tile` and expect a flush column pair | Ignored on iOS 26 (see intro). |
 | Make the master view opaque to hide bleed-through | Doesn't address the layout issue — content still clips at the safe-area edge once the user resizes the window. |
 | Bootstrap secondary from the master's `viewDidLoad` via a callback | Fires after the split commits its initial layout decision. Mount the secondary in the composer instead. |
 
@@ -81,14 +81,9 @@ private final class SecondaryColumnHost: UIViewController {
     super.init(nibName: nil, bundle: nil)
   }
 
-  @available(*, unavailable)
-  required init?(coder _: NSCoder) { fatalError() }
-
   override func viewDidLoad() {
     super.viewDidLoad()
-    // Match the page background so any uncovered strip (status-bar
-    // band when the inner nav bar is hidden) reads as the page
-    // surface, not systemBackground white.
+    // Match page background — see "Why the Host bg Must Match the Page bg" below.
     view.backgroundColor = .pageBackground  // your app's page background token
 
     addChild(content)
@@ -209,7 +204,7 @@ ask for.
 ### What Doesn't Work (and why)
 
 - `split.setViewController(detail, for: .secondary, animated: false)` — no such overload
-- `preferredSplitBehavior = .tile` — ignored on iOS 26 in this respect
+- `preferredSplitBehavior = .tile` — ignored on iOS 26 (see intro)
 - `DispatchQueue.main.async { setViewController(...) }` — the layout
   is still deferred relative to the next layout pass
 - `UIView.setAnimationsEnabled(false)` globally — the animation is

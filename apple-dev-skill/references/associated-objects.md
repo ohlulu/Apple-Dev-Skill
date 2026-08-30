@@ -116,15 +116,7 @@ private final class FieldRowContainerView: UIView {
     init(content: UIView) {
         self.contentView = content
         super.init(frame: .zero)
-        translatesAutoresizingMaskIntoConstraints = false
-        addSubview(content)
-        content.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: topAnchor),
-            content.leadingAnchor.constraint(equalTo: leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: trailingAnchor),
-            content.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
+        // same pin-to-edges init as TappableRowView above
     }
 }
 ```

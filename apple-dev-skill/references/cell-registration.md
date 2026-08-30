@@ -6,19 +6,7 @@
 
 Compile-time type safety, no reuse-identifier typos, configuration centralized in one handler closure.
 
-**`UITableView` has no `CellRegistration` API** — UIKit never shipped one. For table views, use legacy `register(_:forCellReuseIdentifier:)` + `dequeueReusableCell`, optionally wrapped in a generic helper for type safety:
-
-```swift
-extension UITableView {
-    func register<T: UITableViewCell>(_ type: T.Type) {
-        register(type, forCellReuseIdentifier: String(describing: type))
-    }
-
-    func dequeueReusableCell<T: UITableViewCell>() -> T {
-        dequeueReusableCell(withIdentifier: String(describing: T.self)) as! T
-    }
-}
-```
+**`UITableView` has no `CellRegistration` API** — UIKit never shipped one. For table views, use legacy `register(_:forCellReuseIdentifier:)` + `dequeueReusableCell`, optionally wrapped in a generic type-safe helper to avoid reuse-identifier string typos.
 
 ## Pitfalls
 

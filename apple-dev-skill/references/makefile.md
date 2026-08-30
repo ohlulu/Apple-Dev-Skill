@@ -13,7 +13,7 @@ The Makefile is the single entry point for building, testing, running, and relea
 5. **Self-documenting** — `##` comments extracted by `awk` in `help`
 6. **Version management** — `bump VERSION=x.y` and `bump-build`; detect source (xcconfig vs Project.swift)
 7. **Close Xcode before regeneration** — AppleScript closes only workspaces under this repo's path
-8. **Complete `.PHONY`** — every non-file target listed
+8. **Complete `.PHONY`** — every non-file target listed; a target name that collides with a same-named file on disk makes `make` treat the file as already up to date and silently skip the recipe otherwise
 
 ## Recipe or Script?
 
@@ -365,10 +365,8 @@ help:
 
 - [ ] Target device: simulator (pin name + OS, ask the user) or physical (selection script with cache + non-interactive failure)
 - [ ] DerivedData: project-local or shared with IDE — and are the CLI flags consistent with that choice?
-- [ ] Result verification: exit code + success marker + crash marker, in every target that reads a build log
 - [ ] Version source: xcconfig (`MARKETING_VERSION`) or Project.swift
 - [ ] Test structure: Xcode scheme tests, SPM package tests, or both; which scopes deserve a named target vs `ONLY=`
 - [ ] Generator: Tuist → `install` / `generate` / `open`; none → skip
 - [ ] Release flow: App Store → delegate to `scripts/release.sh`; framework → tag only
-- [ ] Recipes over ~10 lines or containing AppleScript → moved to `scripts/`
 - [ ] Project-specific tooling (codegen, fixtures, linting, UI smoke suite)
