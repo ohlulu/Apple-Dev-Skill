@@ -10,9 +10,9 @@ This applies to the system keyboard, `inputView` replacements (e.g., `UIDatePick
 
 The most reliable pattern is a single handler object that:
 
-1. Observes `keyboardWillChangeFrameNotification` (one notification covers show, hide, resize, and iPad split/float).
+1. Observes `keyboardWillChangeFrameNotification` (one notification covers show, hide, resize, and iPad split/float) and `keyboardDidChangeFrameNotification` (re-measures after the host view may have moved — see [Re-measure on `didChangeFrame`](#re-measure-on-didchangeframe)).
 2. Converts the keyboard's end frame into the scroll view's coordinate space.
-3. Computes the overlap between the keyboard top and the scroll view bottom.
+3. Computes the overlap from the intersection of the keyboard frame and the scroll view bounds — not from `bounds.maxY - keyboard.minY` (see [Overlap Is an Intersection](#overlap-is-an-intersection-not-a-subtraction)).
 4. Adjusts `contentInset.bottom` and `verticalScrollIndicatorInsets.bottom` to match.
 5. Scrolls the first responder into view.
 6. Restores original insets when the keyboard hides.
@@ -25,15 +25,24 @@ final class KeyboardScrollHandler {
     private weak var scrollView: UIScrollView?
     private var baselineContentInset: UIEdgeInsets = .zero
     private var baselineIndicatorInset: UIEdgeInsets = .zero
+    private var keyboardEndFrame: CGRect = .zero
+    private var currentOverlap: CGFloat = 0
 
     init(scrollView: UIScrollView) {
         self.scrollView = scrollView
         captureBaseline()
-        NotificationCenter.default.addObserver(
+        let nc = NotificationCenter.default
+        nc.addObserver(
             forName: UIResponder.keyboardWillChangeFrameNotification,
             object: nil, queue: .main
         ) { [weak self] note in
-            MainActor.assumeIsolated { self?.handle(note) }
+            MainActor.assumeIsolated { self?.handle(note, settled: false) }
+        }
+        nc.addObserver(
+            forName: UIResponder.keyboardDidChangeFrameNotification,
+            object: nil, queue: .main
+        ) { [weak self] note in
+            MainActor.assumeIsolated { self?.handle(note, settled: true) }
         }
     }
 
@@ -43,15 +52,20 @@ final class KeyboardScrollHandler {
         baselineIndicatorInset = scrollView.verticalScrollIndicatorInsets
     }
 
-    private func handle(_ note: Notification) {
+    private func handle(_ note: Notification, settled: Bool) {
         guard let scrollView,
               let endFrame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
               let duration = note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? TimeInterval,
               let curve = note.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt
         else { return }
 
+        keyboardEndFrame = endFrame
         let converted = scrollView.convert(endFrame, from: nil)
-        let overlap = max(0, scrollView.bounds.maxY - converted.minY)
+        let overlap = Self.bottomOverlap(keyboardFrame: converted, in: scrollView.bounds)
+
+        // The settled pass only acts when the host view moved under the keyboard.
+        if settled, abs(overlap - currentOverlap) <= 0.5 { return }
+        currentOverlap = overlap
 
         var options = UIView.AnimationOptions(rawValue: curve << 16)
         options.formUnion(.beginFromCurrentState)
@@ -71,6 +85,13 @@ final class KeyboardScrollHandler {
             let rect = responder.convert(responder.bounds, to: scrollView)
             scrollView.scrollRectToVisible(rect.insetBy(dx: 0, dy: -16), animated: true)
         }
+    }
+
+    static func bottomOverlap(keyboardFrame: CGRect, in scrollBounds: CGRect) -> CGFloat {
+        let intersection = scrollBounds.intersection(keyboardFrame)
+        guard !intersection.isNull, !intersection.isEmpty else { return 0 }
+        guard intersection.maxY >= scrollBounds.maxY - 0.5 else { return 0 }
+        return scrollBounds.maxY - intersection.minY
     }
 }
 ```
@@ -95,6 +116,21 @@ final class EditViewController: UIViewController {
 ### Why `keyboardWillChangeFrameNotification`?
 
 A single notification handles all transitions: show, hide, dock/undock, resize (iPad split keyboard, predictive bar changes). No need to observe `willShow` and `willHide` separately.
+
+### Re-measure on `didChangeFrame`
+
+Always observe `keyboardDidChangeFrameNotification` too and re-run the same measurement from it. A presentation controller may relocate the host view inside the same keyboard animation — an iPad form sheet is pushed up so the keyboard does not cover it — and at `willChangeFrame` time the scroll view still sits at its pre-move position. The overlap computed there is against geometry that no longer exists once the animation lands (observed: 212pt computed, 39pt real). Nothing else re-measures, so the inset and the responder scroll stay wrong until the keyboard hides.
+
+The settled pass re-measures with the stored end frame and only re-applies when the result differs from the pending overlap by more than a sub-pixel tolerance. Full-screen scroll views never move, so for them it is a no-op; the extra observer costs nothing where it is not needed.
+
+### Overlap Is an Intersection, Not a Subtraction
+
+`bounds.maxY - keyboard.minY` is correct only for a docked keyboard that spans the scroll view's width. iPad's floating keyboard breaks it two ways:
+
+- Parked beside the sheet with no horizontal overlap — the end frame's `minY` is still below the sheet's bottom, so the subtraction reports a phantom inset. `CGRect.intersection` is null, and the handler exits with 0.
+- Dragged up so it hovers above the scroll view's lower edge — the rects intersect, but the keyboard is not trapping content against the bottom. Count the intersection as an intrusion only when it reaches the scroll view's `maxY`; otherwise `scrollRectToVisible` alone keeps the field visible.
+
+Keep the function static and pure so it can be unit-tested with plain rects.
 
 ### Animation Curve
 
@@ -144,5 +180,7 @@ Downstream consequence to state in the helper's doc comment: a `UIControl` tap n
 |---------|---------|
 | Adjusting the view's frame or transform | Breaks Auto Layout; doesn't survive rotation |
 | Hardcoding keyboard height | Varies by device, locale, input accessory, and predictive bar state |
+| Measuring only in `willChangeFrame` | Form sheets move during the animation; see [Re-measure on `didChangeFrame`](#re-measure-on-didchangeframe) |
+| `bounds.maxY - keyboard.minY` as the overlap | Phantom inset for a floating keyboard; see [Overlap Is an Intersection](#overlap-is-an-intersection-not-a-subtraction) |
 | Forgetting to restore insets | Scroll view stays inset after keyboard hides |
 | Background-tap dismisser that fires on control taps | See [Background-Tap Dismissers Must Ignore Controls](#background-tap-dismissers-must-ignore-controls) above |
