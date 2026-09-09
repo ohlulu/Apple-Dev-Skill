@@ -2,53 +2,76 @@
 
 ## Problem
 
-`xcodebuild -exportArchive -exportOptionsPlist ...` with `method=app-store-connect` and `signingStyle=automatic` does **not** sign against a local Apple Distribution certificate. Instead it asks Apple to mint a one-shot **cloud-signed** cert + profile at export time.
+`xcodebuild -exportArchive -exportOptionsPlist ...` with `method=app-store-connect` and `signingStyle=automatic` does **not** sign against a local Apple Distribution certificate. It asks Apple to mint (or reuse) a **cloud-managed** Apple Distribution cert + profile at export time. The private key never leaves Apple; the machine holds no `.p12` and no `.mobileprovision`.
 
-Cloud signing in **CLI mode** authenticates using the Apple ID OAuth session cached by Xcode (`Xcode → Settings → Accounts`). An App Store Connect **API key is not a substitute** — the API key cannot create distribution certs/profiles on the fly, even with full role permissions.
+Cloud signing needs *something* to authenticate the request. There are two sources, and which one `xcodebuild` uses decides whether your release script survives a machine change:
 
-If no Apple ID account is signed in to Xcode on the machine, every CLI export fails. The error message depends on which auth flags you pass and is misleading either way.
+| Auth source | How xcodebuild picks it | Failure mode |
+|---|---|---|
+| Xcode GUI account session (Xcode → Settings → Apple Accounts) | Default when no `-authenticationKey*` flags are passed | Session expiry or an upload rejection silently empties `DVTDeveloperAccountManagerAppleIDLists`; every CLI export dies until someone re-logs in with password + 2FA. GUI can still *show* the account while xcodebuild sees none. Not portable to another Mac or CI. |
+| App Store Connect **team API key** with the **Admin** role | `-allowProvisioningUpdates -authenticationKeyPath <.p8> -authenticationKeyID <id> -authenticationKeyIssuerID <issuer>` on both `archive` and `-exportArchive` | Only fails if the `.p8` is missing or the key role is too low. Ignores the GUI account state entirely. Portable: copy one `.p8`. |
 
-## Symptoms
+**Use the API key.** The GUI-session path is what Xcode falls back to, not a design.
 
-| Flags passed to `xcodebuild -exportArchive` | Error |
-|---|---|
-| None (default) | `Failed to find an account with App Store Connect access for team <TEAM_ID>` |
-| `-authenticationKeyPath / -authenticationKeyID / -authenticationKeyIssuerID` | `Cloud signing permission error` + `No signing certificate "iOS Distribution" found` |
+## Symptoms and what they actually mean
 
-Both errors mean the **same thing**: cloud signing has no interactive session to fall back on. The second error is especially deceptive — it sounds like a missing local cert problem, but a local Apple Distribution cert is not what `automatic` signing actually wants.
+| Error | Real cause | Fix |
+|---|---|---|
+| `Failed to Use Accounts` / `Failed to find an account with App Store Connect access for team <TEAM>` | No `-authenticationKey*` flags, and the Xcode account session is gone | Add the three flags; do not re-login in the GUI as the fix |
+| `Cloud signing permission error` + `No signing certificate "iOS Distribution" found` | The API key's role is **App Manager or Developer**. Cloud-managed distribution certs require Admin (Apple: "Required role: Account Holder or Admin"). The second line is a red herring — cloud signing never wanted a local distribution identity | Generate a new team key with the Admin role (Account Holder / Admin only, Users and Access → Integrations → Team Keys). A key's role cannot be edited after creation |
+| `Your account already has an Apple Development signing certificate for this machine, but its private key is not installed` | Ephemeral CI: the **archive** step still signs with a local Apple Development identity, and every fresh runner re-mints one until the per-account cap | Store a dev `.p12` and import it on the runner, or switch that pipeline to manual signing. A persistent second Mac does not hit this — it mints once and reuses |
 
-## Fix (one-time per machine)
+## Verified (2026-09-09, Xcode 26, team TSTQSY2TJN)
 
-1. Open Xcode → **Settings → Accounts**
-2. Add the Apple ID that belongs to the team (account-holder or admin role on App Store Connect)
-3. Let Xcode finish "Loading…" the team membership
+Export with an Admin key while both Xcode GUI accounts failed to load (`Invalid credentials in keychain … missing Xcode-Username` in the log): `** EXPORT SUCCEEDED **`, `DistributionSummary.plist` → `type = Cloud Managed Apple Distribution`, IPA `codesign -dvv` → `Authority=Apple Distribution: … (TSTQSY2TJN)`. The same team's App Manager key is documented by several independent CI logs to fail at the `Cloud signing permission error` line.
 
-That is the whole fix. No script changes, no export plist edits, no certs to install, no provisioning profile downloads.
+## Recipe
 
-After this, `xcodebuild -exportArchive` from any shell — including from a Makefile, CI script, or release pipeline — will reuse the cached OAuth session for cloud signing and succeed.
+```bash
+ASC_KEY_ID="${ASC_KEY_ID:-<ADMIN_KEY_ID>}"
+ASC_ISSUER_ID="${ASC_ISSUER_ID:-<ISSUER_UUID>}"
+ASC_PRIVATE_KEY_PATH="${ASC_PRIVATE_KEY_PATH:-$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8}"
 
-## Anti-Patterns (do NOT do these)
+xcodebuild -workspace App.xcworkspace -scheme App \
+  -destination 'generic/platform=iOS' -archivePath /tmp/App.xcarchive \
+  -allowProvisioningUpdates \
+  -authenticationKeyPath "$ASC_PRIVATE_KEY_PATH" \
+  -authenticationKeyID "$ASC_KEY_ID" \
+  -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+  clean archive
+
+xcodebuild -exportArchive -archivePath /tmp/App.xcarchive \
+  -exportOptionsPlist ExportOptions.plist -exportPath /tmp/AppExport \
+  -allowProvisioningUpdates \
+  -authenticationKeyPath "$ASC_PRIVATE_KEY_PATH" \
+  -authenticationKeyID "$ASC_KEY_ID" \
+  -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+```
+
+- `ExportOptions.plist` stays `signingStyle=automatic`, `destination=upload`; the upload uses the same key.
+- `~/private_keys/` is the directory Apple's own `altool` / `notarytool` search, so a new machine needs exactly one file copied there. Key ID and Issuer ID are not secrets; the `.p8` is, and Apple keeps no copy.
+- Keep the Admin key separate from the key day-to-day tooling (`asc`) uses. The release script is the only consumer that needs Admin.
+- Env var names match the `asc` CLI's (`ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_PRIVATE_KEY_PATH`), so a CI that sets them once drives both the signer and the ASC tooling. If those env vars point at a non-Admin key on a packaging machine, the export fails with the permission error above — unset them.
+
+## Anti-patterns
 
 | Wrong reflex | Why it fails |
 |---|---|
-| `asc certificates create --certificate-type DISTRIBUTION` to mint a local Apple Distribution cert | Wastes a cert slot; `signingStyle=automatic` still tries cloud signing first and ignores it. Also irreversible without revoking. |
-| Adding `-authenticationKeyPath` etc. to fix the first error | Silences the *account* error but exposes the *cloud signing permission* error — same root cause, different message. |
-| Switching to `signingStyle=manual` and shipping a `.p12` + `.mobileprovision` to every dev/CI machine | Works but adds a secret-management burden and yearly cert renewal pain. Use only if cloud signing is genuinely unavailable (e.g. headless CI with no GUI Xcode login). |
-| Falling back to Xcode Organizer GUI for every release | Hides the missing-account state and breaks any release automation. Fix the account once, keep CLI flow. |
+| Re-logging into Xcode → Settings → Accounts whenever export dies | Works for one release, then the session drops again. It also hides the dependency, so the next machine or CI is a surprise |
+| `asc certificates create --certificate-type DISTRIBUTION` to mint a local Apple Distribution cert | `signingStyle=automatic` ignores it and still cloud-signs; the cert wastes a slot and its private key is now a thing you have to keep |
+| Reading `No signing certificate "iOS Distribution" found` as "install a cert" | It is the key-role error's second line. Fix the role |
+| `signingStyle=manual` + `.p12` + `.mobileprovision` on every dev machine | Adds a yearly cert rotation and a private key to protect, for a problem the API key already solves. Reserve it for ephemeral CI where the archive-step dev-cert cap bites |
 
-## Quick Diagnosis
+## Quick diagnosis
 
 ```bash
-# Is cloud signing wired up?
-defaults read MobileMeAccounts 2>/dev/null | grep -c AccountID   # >= 1 = yes
-ls ~/Library/Developer/Xcode/UserData/IDEAccounts/ 2>/dev/null   # exists = yes
+# Is the key in place?
+ls -l ~/private_keys/AuthKey_<KEY_ID>.p8
 
-# Are there any local distribution identities? (usually NO, and that's fine)
+# Local distribution identities? (usually NONE, and that's correct)
 security find-identity -v -p codesigning | grep -E "Apple Distribution|iPhone Distribution"
+
+# Which cert signed the last export?
+/usr/libexec/PlistBuddy -c Print /tmp/AppExport/DistributionSummary.plist | grep -m1 type
+# → "Cloud Managed Apple Distribution"
 ```
-
-If the first check returns 0 / no directory, the fix is the three-step Xcode account add above. The second check returning empty is **not** a problem — cloud signing does not need a local distribution identity.
-
-## Headless CI Exception
-
-The Xcode-account approach assumes a developer machine where someone can log in interactively once. For fully headless CI runners (e.g. GitHub Actions macOS images), you genuinely need `signingStyle=manual` with a stored `.p12` + provisioning profile, or a tool like fastlane match. That is a separate workflow — do not mix it into a developer-machine release script.

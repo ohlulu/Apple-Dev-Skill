@@ -147,7 +147,7 @@ Family rule: when a reference is a special case of another, both router rows mus
 | Close this project's Xcode windows before regeneration (path-matched, not title-matched). | [xcode-close.applescript](references/xcode-close.applescript) |
 | Tuist SPM integration. Xcode-native vs XcodeProj-based, wrapper target problem, migration steps. | [tuist-spm-integration](references/tuist-spm-integration.md) |
 | xcodebuild error detection. Three-way verification (exit code + failure marker + success marker present), test crash detection, CODE_SIGNING_ALLOWED=NO. | [xcodebuild-error-detection](references/xcodebuild-error-detection.md) |
-| CLI distribution signing. exportArchive cloud signing needs an Xcode-accounts OAuth session, not an ASC API key; do not mint local distribution certs as a workaround. | [cli-distribution-signing](references/cli-distribution-signing.md) |
+| CLI distribution signing. exportArchive cloud signing authenticates with an Admin-role ASC team API key (`-authenticationKey*` flags), never the Xcode GUI account session; App Manager keys fail with a misleading missing-cert error; do not mint local distribution certs as a workaround. | [cli-distribution-signing](references/cli-distribution-signing.md) |
 
 ### Swift Coding Style (App Context)
 
