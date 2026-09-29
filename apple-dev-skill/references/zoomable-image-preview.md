@@ -12,7 +12,7 @@ Tap-to-enlarge avatar / image with these traits, taken together:
 
 If the requirement is only "show a bigger image full-screen", a plain modal with `UIImageView` is enough. This page is for the case where the *motion* between source and preview matters and the viewer is interactive.
 
-Not for: navigation push transitions (use `UINavigationController`'s built-in), photo browser libraries (use a vendored library — INSPhotoGallery / SKPhotoBrowser).
+Not for: navigation push transitions (use `UINavigationController`'s built-in), photo browser libraries (use a vendored library — INSPhotoGallery / SKPhotoBrowser), a card that grows into a detail with different content (→ [card-zoom-transition](card-zoom-transition.md), which builds on the facts below).
 
 ## Architecture Skeleton (Five Pieces)
 
