@@ -28,6 +28,9 @@ REPO_ROOT := $(CURDIR)
 
 WORKSPACE := {{PROJECT_NAME}}.xcworkspace
 SCHEME    := {{PROJECT_NAME}}
+# Configuration for build/run. Both read it, so the path run installs from
+# always belongs to the build that just ran. `make run CONFIG=Release`.
+CONFIG    ?= Debug
 
 # Simulator destination. SIM_NAME/SIM_OS are the single source for both the
 # xcodebuild destination ($(SIM)) and simctl UDID resolution ($(SIM_UDID_SH)).
@@ -103,6 +106,22 @@ XCODE_CHECK = want=$$(cat $(REPO_ROOT)/.xcode-version 2>/dev/null); \
 	if [ -n "$$want" ] && [ "$$have" != "$$want" ] && [ -z "$(SKIP_XCODE_CHECK)" ]; then \
 	  echo "❌ Xcode $$have is selected but .xcode-version pins $$want — switch with xcode-select -s, or SKIP_XCODE_CHECK=1"; exit 1; \
 	fi
+
+# The built .app, asked from xcodebuild instead of hardcoded — product name,
+# configuration, and platform directory all vary. Same destination, DerivedData,
+# and configuration as the build, since TARGET_BUILD_DIR derives from all three.
+# A scheme prints one settings block per target (frameworks, extensions, an
+# embedded watch app — often before the app), so take the block that is an
+# application for the simulator, not the first TARGET_BUILD_DIR. Recursive `=`:
+# evaluated only when `run` expands its recipe, after `build` finished.
+APP_BLOCK_AWK = function app() { return t == "com.apple.product-type.application" && p == "iphonesimulator" } \
+	/^Build settings for action/ { if (app()) exit; t = p = d = w = "" } \
+	/^ *PRODUCT_TYPE = / { t = $$2 } /^ *PLATFORM_NAME = / { p = $$2 } \
+	/^ *TARGET_BUILD_DIR = / { d = $$2 } /^ *WRAPPER_NAME = / { w = $$2 } \
+	END { if (app()) print d "/" w }
+APP_PATH = $(shell xcodebuild -workspace $(WORKSPACE) -scheme $(SCHEME) -destination '$(SIM)' \
+	-derivedDataPath "$(DD)" -configuration $(CONFIG) -showBuildSettings 2>/dev/null \
+	| awk -F' = ' '$(APP_BLOCK_AWK)')
 
 # ---------------------------------------------------------------------------
 # xc macro — DRY xcodebuild runner
@@ -185,7 +204,7 @@ test:
 # Build & run
 # ---------------------------------------------------------------------------
 
-## Build for the pinned simulator (Debug)
+## Build for the pinned simulator (CONFIG=, default Debug)
 ## NOTE: must stay signed. CODE_SIGNING_ALLOWED=NO skips the CodeSign phase,
 ## leaving only the linker's ad-hoc signature — codesign -dvvv reports
 ## flags=0x20002(adhoc,linker-signed) instead of flags=0x2(adhoc) — and simulator
@@ -194,7 +213,7 @@ test:
 ## way, so the signature is what matters, not an application-identifier check.
 ## That flag is only safe on compile-check targets that are never installed.
 build:
-	$(call xc,build-debug,$(SCHEME),build,-configuration Debug)
+	$(call xc,build-$(CONFIG),$(SCHEME),build,-configuration $(CONFIG))
 
 ## Build Release — compile check only, never installed
 build-release:
@@ -210,9 +229,9 @@ run: build
 	if [ -z "$$UDID" ]; then \
 	  echo "❌ simulator '$(SIM_NAME)' (iOS $(SIM_OS)) not found — create it in Xcode > Devices"; exit 1; \
 	fi; \
-	APP=$(DD)/Build/Products/Debug-iphonesimulator/$(SCHEME).app; \
-	if [ ! -d "$$APP" ]; then \
-	  echo "❌ build artifact not found: $$APP"; exit 1; \
+	APP="$(APP_PATH)"; \
+	if [ -z "$$APP" ] || [ ! -d "$$APP" ]; then \
+	  echo "❌ no built simulator .app for scheme '$(SCHEME)' ($(CONFIG)): '$$APP' — does the scheme's build action include the app target?"; exit 1; \
 	fi; \
 	BID=$$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$$APP/Info.plist"); \
 	xcrun simctl bootstatus "$$UDID" -b >/dev/null 2>&1 || { \

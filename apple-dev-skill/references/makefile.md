@@ -238,20 +238,28 @@ Document every parameter in the `##` comment. That comment is the only place use
 
 Always provide a `run` target that builds, installs, and launches in one command — the single command both agents and developers use, with no manual `simctl` or `devicectl` sequences.
 
-**Never hardcode the bundle ID or the product path.** Debug builds often append `.debug` to the identifier, and the product directory changes with configuration and platform. Ask xcodebuild instead:
+**Never hardcode the bundle ID or the product path.** Debug builds often append `.debug` to the identifier, and the product directory changes with configuration and platform. Ask xcodebuild for the path, then read the identifier from the built bundle:
 
 ```sh
-SETTINGS=$(xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" \
-    -destination generic/platform=iOS -configuration "$CONFIGURATION" \
-    -showBuildSettings 2>/dev/null)
-
-TARGET_BUILD_DIR=$(printf '%s\n' "$SETTINGS" | awk -F' = ' '/ TARGET_BUILD_DIR =/{print $2; exit}')
-WRAPPER_NAME=$(printf '%s\n' "$SETTINGS" | awk -F' = ' '/ WRAPPER_NAME =/{print $2; exit}')
-BUNDLE_ID=$(printf '%s\n' "$SETTINGS" | awk -F' = ' '/ PRODUCT_BUNDLE_IDENTIFIER =/{print $2; exit}')
-APP_PATH="${TARGET_BUILD_DIR}/${WRAPPER_NAME}"
+APP_PATH=$(xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" \
+    -destination "$DESTINATION" -derivedDataPath "$DD" -configuration "$CONFIGURATION" \
+    -showBuildSettings 2>/dev/null | awk -F' = ' '
+  function app() { return t == "com.apple.product-type.application" && p == "iphonesimulator" }
+  /^Build settings for action/ { if (app()) exit; t = p = d = w = "" }
+  /^ *PRODUCT_TYPE = /     { t = $2 }
+  /^ *PLATFORM_NAME = /    { p = $2 }
+  /^ *TARGET_BUILD_DIR = / { d = $2 }
+  /^ *WRAPPER_NAME = /     { w = $2 }
+  END { if (app()) print d "/" w }')
+BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Info.plist")
 ```
 
-`PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist"` is an acceptable shortcut when the path is already known, but `-showBuildSettings` survives configuration changes that a hardcoded `Debug-iphonesimulator` path does not.
+Two things make this query return the wrong path when done the obvious way:
+
+- **Pass the build's own destination, `-derivedDataPath`, and configuration.** `TARGET_BUILD_DIR` derives from all three, so querying with `generic/platform=iOS` returns the `iphoneos` directory of a simulator build, and omitting `-derivedDataPath` returns the IDE's DerivedData instead of the one the build wrote to.
+- **Select the app's settings block, not the first match.** `-showBuildSettings` prints one block per target in the scheme's build action — frameworks, extensions, an embedded watch app — often before the app. Taking the first `TARGET_BUILD_DIR` / `WRAPPER_NAME` returns whichever target prints first — a `.framework` path the install then rejects. Match `PRODUCT_TYPE` = application *and* `PLATFORM_NAME` = the destination's platform, because a modern watch app is also an application.
+
+The bundle identifier comes from the built `Info.plist` rather than `PRODUCT_BUNDLE_IDENTIFIER`: it is what `simctl launch` matches against, and it is unambiguous once the path is.
 
 **`print()` output.** A plain `simctl launch` returns immediately and the app's stdout goes nowhere an agent can read. `simctl launch --console-pty` blocks and streams the app's stdout and stderr through a pseudo-terminal, and forwards Ctrl-C to the app. Prefer it over `--stdout=<file>`: on a file, stdout is block-buffered, so `print()` lines arrive late or only at exit, while a pty keeps them line-buffered. An agent runs the blocking launch in the background with its output redirected to a log. [Makefile.template](Makefile.template)'s `run` takes `CONSOLE=1` for this.
 
