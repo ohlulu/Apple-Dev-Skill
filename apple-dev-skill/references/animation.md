@@ -52,6 +52,39 @@ UIView.animate(withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.8, ...) { 
 
 For tier 3 (choreography), the spring recipes in the sections below are the sanctioned defaults — use them directly.
 
+## Pass a Transition Value, Not `animated: Bool`
+
+A view that updates both with and without animation computes its end state in one function and receives *how* to apply it as a value. Branching on `animated: Bool` into two code paths lets them drift — the animated path gains a constraint the immediate path forgot, and the bug shows on only one of them.
+
+```swift
+enum LayoutTransition {
+    case immediate
+    case animated(duration: TimeInterval, curve: UIView.AnimationCurve)
+
+    @MainActor func perform(_ changes: @escaping @MainActor () -> Void) {
+        switch self {
+        case .immediate:
+            changes()
+        case let .animated(duration, curve):
+            let options = UIView.AnimationOptions(rawValue: UInt(curve.rawValue) << 16)
+            UIView.animate(withDuration: duration, delay: 0, options: options, animations: changes)
+        }
+    }
+}
+
+func update(transition: LayoutTransition) {
+    heightConstraint.constant = state.isExpanded ? expandedHeight : collapsedHeight
+    transition.perform {
+        self.badge.alpha = self.state.badgeCount > 0 ? 1 : 0
+        self.layoutIfNeeded()
+    }
+}
+```
+
+Every state change calls this one function with the transition it wants — `.immediate` for the first configure, `.animated` for a user action. No handler adjusts a constraint on its own, so state and layout cannot disagree. The first update of a newly created view is always `.immediate`; see implicit-animations.md → "Views Created Mid-Update".
+
+When an animated update may still be running as an immediate one arrives (a rotation during an expand), the immediate path must stop it on the views it moves — `layer.removeAllAnimations()` — or the running animation keeps interpolating on top of the new value.
+
 ## Expand / Collapse Choreography
 
 For content that expands to reveal more items (unit values, details, accordion sections). Two-phase structure makes the motion feel intentional, not mechanical.

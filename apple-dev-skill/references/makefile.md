@@ -11,7 +11,7 @@ The Makefile is the single entry point for building, testing, running, and relea
 3. **Makefile is the menu; scripts/ is the kitchen** — see [Recipe or Script](#recipe-or-script)
 4. **Comments explain WHY** — not what the target name already says
 5. **Self-documenting** — `##` comments extracted by `awk` in `help`
-6. **Version management** — `bump VERSION=x.y` and `bump-build`; detect source (xcconfig vs Project.swift)
+6. **Version management** — `bump VERSION=x.y` and `bump-build`; detect source (shared `Version.xcconfig` vs Project.swift)
 7. **Close Xcode before regeneration** — AppleScript closes only workspaces under this repo's path
 8. **Complete `.PHONY`** — every non-file target listed; a target name that collides with a same-named file on disk makes `make` treat the file as already up to date and silently skip the recipe otherwise
 
@@ -134,6 +134,10 @@ Sharing also means the two builds serialize on one lock, so a CLI build started 
 
 [Makefile.template](Makefile.template) ships project-local, since it is the safer starting point: correct on any project size, and it cannot be broken by a flag change. Switch to sharing when cold-build cost actually hurts.
 
+## Toolchain Pin
+
+Commit the exact Xcode version the project builds with to `.xcode-version` (e.g. `26.4`, the file `xcodes` also reads) and fail every xcodebuild call when the selected Xcode differs. A mismatched toolchain otherwise fails much later, as opaque compile, macro, or signing errors that look like project bugs. [Makefile.template](Makefile.template) runs the check at the top of the `xc` macro, with `SKIP_XCODE_CHECK=1` as the deliberate override while evaluating a new Xcode (then follow xcconfig.md → Xcode Upgrade SOP and bump the file).
+
 ## Build Result Verification
 
 **Exit code alone is not a reliable success signal.** Three ways a green exit hides a red build:
@@ -248,6 +252,8 @@ APP_PATH="${TARGET_BUILD_DIR}/${WRAPPER_NAME}"
 ```
 
 `PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist"` is an acceptable shortcut when the path is already known, but `-showBuildSettings` survives configuration changes that a hardcoded `Debug-iphonesimulator` path does not.
+
+**`print()` output.** A plain `simctl launch` returns immediately and the app's stdout goes nowhere an agent can read. `simctl launch --console-pty` blocks and streams the app's stdout and stderr through a pseudo-terminal, and forwards Ctrl-C to the app. Prefer it over `--stdout=<file>`: on a file, stdout is block-buffered, so `print()` lines arrive late or only at exit, while a pty keeps them line-buffered. An agent runs the blocking launch in the background with its output redirected to a log. [Makefile.template](Makefile.template)'s `run` takes `CONSOLE=1` for this.
 
 Guard the artifact before using it — `[ ! -d "$APP_PATH" ]`. If the build produced nothing at the expected path, reading `Info.plist` fails with a cryptic error that hides the real cause; an explicit check names it.
 
@@ -365,7 +371,8 @@ help:
 
 - [ ] Target device: simulator (pin name + OS, ask the user) or physical (selection script with cache + non-interactive failure)
 - [ ] DerivedData: project-local or shared with IDE — and are the CLI flags consistent with that choice?
-- [ ] Version source: xcconfig (`MARKETING_VERSION`) or Project.swift
+- [ ] Version source: one `Version.xcconfig` every app and extension target includes, or Project.swift
+- [ ] Toolchain pin: `.xcode-version` committed and matching the team's Xcode
 - [ ] Test structure: Xcode scheme tests, SPM package tests, or both; which scopes deserve a named target vs `ONLY=`
 - [ ] Generator: Tuist → `install` / `generate` / `open`; none → skip
 - [ ] Release flow: App Store → delegate to `scripts/release.sh`; framework → tag only

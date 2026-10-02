@@ -8,7 +8,9 @@ frame-engine.
 ## When to Apply / Not for
 
 Apply when a UIImageView subclass drives per-frame rendering itself (custom
-engine, `SDAnimatedImagePlayer`, CADisplayLink + frame buffer). Not for plain
+engine, `SDAnimatedImagePlayer`, CADisplayLink + frame buffer), and when a
+screen plays many such animations at once (sticker / GIF / emoji grids —
+see "Many Animations on Screen"). Not for plain
 `UIImageView.animationImages` usage, and not for SwiftUI.
 
 ## Trap 1: Never override `isAnimating` on an image-setting renderer
@@ -66,6 +68,31 @@ YY-era note: `YYAnimatedImageView` never had this bug because it never pauses
 on ancestor visibility — at the cost of burning CPU for every pooled-hidden
 cell. If a migration away from YY adds visibility gating, it must add the
 resume path in the same change.
+
+## Many Animations on Screen
+
+A grid where every cell owns its own timer and decoder burns CPU in
+proportion to the cell count and updates frames in separate Core Animation
+commits that drift out of step. Consider:
+
+- **One clock for all players.** A single `CADisplayLink` (or timer on
+  `RunLoop.main` in `.common` modes) ticks every visible player; it
+  invalidates itself when no player wants frames and restarts on the next
+  play request. `CADisplayLink` retains its target, so register through a
+  weak proxy or the link keeps the owner alive.
+- **One decoder per (asset, pixel size).** Two cells showing the same
+  sticker at the same size share decoded frames instead of decoding twice.
+- **Apply a tick's frames together on main.** Decode off main, then assign
+  every frame for the tick in one main-thread pass so they land in one
+  commit.
+- **Lower the rate when power is constrained** — e.g. 30 fps while
+  `ProcessInfo.processInfo.isLowPowerModeEnabled` (observe
+  `.NSProcessInfoPowerStateDidChange`).
+
+Above 60 Hz on ProMotion iPhones, `preferredFrameRateRange` alone is not
+enough: the app's Info.plist must also set
+`CADisableMinimumFrameDurationOnPhone` to `true`, or custom display-link
+animations stay capped at 60 Hz.
 
 ## Probe ladder: "frames delivered but screen frozen"
 

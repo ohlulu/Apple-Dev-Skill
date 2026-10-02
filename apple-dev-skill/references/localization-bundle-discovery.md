@@ -128,6 +128,7 @@ Prefer the explicit declaration.
 | Symptom                                              | Likely cause |
 |------------------------------------------------------|--------------|
 | Settings picker present, but selecting a language has no effect | App reads strings via `NSLocalizedString` from `Bundle.main` instead of the framework's bundle. Switch to `Bundle.module` or a typed `L10n.tr(...)` helper bound to the resource bundle. |
+| Strings or images resolve in the app but come back nil inside an extension | `Bundle.main` is the `.appex` there. See [app-extension-targets.md](app-extension-targets.md) → "`Bundle.main` Is the Extension". |
 | Picker shows the wrong language name (e.g. "中文" instead of "繁體中文") | `CFBundleLocalizations` entry uses `zh` instead of `zh-Hant`; iOS displays whatever you declare. Match the actual `.lproj` folder. |
 
 ## Checklist

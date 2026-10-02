@@ -18,7 +18,8 @@ This split applies regardless of whether you use Tuist, XcodeGen, or pure Xcode.
 ```
 {Project}/Configs/
 ├── Project.xcconfig              ← project-wide: Swift version, concurrency, warnings
-├── {TargetName}.xcconfig         ← target shared: team, version, bundle ID base
+├── Version.xcconfig              ← MARKETING_VERSION + CURRENT_PROJECT_VERSION only
+├── {TargetName}.xcconfig         ← target shared: team, bundle ID base; #include "Version.xcconfig"
 ├── {TargetName}-Debug.xcconfig   ← debug override (#include base)
 ├── {TargetName}-Release.xcconfig ← release override (#include base)
 └── {TargetName}Tests.xcconfig    ← test target settings
@@ -55,11 +56,13 @@ OTHER_SWIFT_FLAGS[config=Debug] = $(inherited) -Xfrontend -warn-long-expression-
 **{TargetName}.xcconfig** (shared target settings):
 
 ```xcconfig
+#include "Version.xcconfig"
+
 DEVELOPMENT_TEAM = XXXXXXXXXX
-MARKETING_VERSION = 1.0
-CURRENT_PROJECT_VERSION = 1
 SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor  // or nonisolated for tests
 ```
+
+**Version.xcconfig** is its own file because the app and every extension target must carry the same version — see [app-extension-targets.md](app-extension-targets.md) → "One Version Source for Every Bundle". The app and each extension's `{TargetName}.xcconfig` include it; `make bump` edits only this file.
 
 **Inline — recommended settings only:**
 

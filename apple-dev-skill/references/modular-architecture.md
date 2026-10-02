@@ -116,6 +116,54 @@ In order; don't skip:
 4. **Timing**: finish *before* growing the team — nobody should learn the
    architecture twice.
 
+Three rules for executing a pass, because the plan is always older than
+the code:
+
+- **Re-inventory at execution time.** Count the call sites and the
+  cascade (types, overloads, conformances that change with the moved
+  type) right before editing, not from the plan. A planning-time grep
+  routinely undercounts, and the pass then lands half-done or gets
+  reverted.
+- **Search before adding.** Before writing a new wrapper, typealias, or
+  forwarding method, search the target module for an existing
+  equivalent; two spellings of one concept is the start of a second
+  migration.
+- **Abandon, don't substitute.** If the module can only move by breaking
+  a layering rule or editing modules outside the pass, stop and record
+  why. Swapping in a different module mid-pass turns a reviewed plan
+  into an unreviewed one.
+
+### Hiding a Storage or SDK Type Behind a Module
+
+When consumers should stop importing a persistence layer or a vendor SDK:
+
+- **Typealias leaf value types** (identifiers, small value structs) in
+  the facade module, so consumers can drop the import file by file.
+- **Never typealias the umbrella type** — the database handle, the
+  account or session object, the SDK client. An alias renames it without
+  encapsulating anything, and every consumer keeps full access to the
+  layer the migration was meant to hide.
+- **Never erase to `Any` / `AnyObject`** to dodge a missing type. It
+  compiles, and it discards the domain type the next reader relies on.
+  Extend the facade's wrapper type instead, or keep the original import
+  and flag that call site for a later pass.
+
+## Import Visibility and Stale Dependencies
+
+- **Never re-export a dependency** (`@_exported import`) from a facade.
+  Consumers then use the lower module without declaring it, and that
+  dependency can never be removed without breaking them.
+- **Swift 6: make imports internal by default** — `internal import X`
+  (SE-0409), or the `InternalImportsByDefault` upcoming feature
+  module-wide. Write `public import X` only where the module's public API
+  exposes X's types. The compiler then rejects a leaked dependency
+  instead of a reviewer having to spot it.
+- **Prune the declared dependency when the last import goes.** A stale
+  edge still orders the build graph and keeps the module in the
+  dependent's rebuild set. Tuist checks both directions with
+  `tuist inspect dependencies` (4.x releases before it:
+  `tuist inspect implicit-imports`).
+
 ## Anti-Pattern Recognition
 
 | Anti-pattern | Symptom | Fix |

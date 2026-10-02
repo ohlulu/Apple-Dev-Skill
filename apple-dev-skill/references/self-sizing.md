@@ -6,6 +6,12 @@ Never manually sum magic numbers to compute a view's height. If every subview ha
 
 Hardcoded height calculations are fragile: they silently drift when padding, font size, or spacing changes. The layout engine is the single source of truth.
 
+## A View Reports Its Size; Its Parent Places It
+
+A reusable view never writes its own `frame`, `center`, or `bounds.size`, and never constrains itself to its superview (e.g. from `didMoveToSuperview`). It reports a size — `intrinsicContentSize`, `sizeThatFits(_:)`, or a complete constraint chain — and lays out its children against `self.bounds`. The parent, or the parent's layout system, decides where it goes.
+
+A view that sets its own geometry from `configure` / `update` fights the parent: the parent's next layout pass overwrites the value, or the value overrides the size the parent just measured, and the result depends on which ran last. The reverse direction — a parent reaching down to size a child's sublayers — is in [shadow-and-clipping.md](shadow-and-clipping.md) → "CALayer Frame Ownership".
+
 ## `systemLayoutSizeFitting` — The Universal Measuring Tool
 
 Given a root view (typically a `UIStackView`) with a complete constraint chain, compress it at a fixed width to get the intrinsic height:

@@ -190,6 +190,7 @@ Hard rules:
 - store the model the row needs
 - release stale cell references on reuse / end-display
 - guard duplicate async starts in the controller or loader
+- for image requests, cancel at the start of every rebind and guard the assignment by identity — see [cell-image-loading.md](cell-image-loading.md)
 - never assume which section or index the controller lives in — the container handles routing
 - only rely on delegate methods the container explicitly forwards (see Dispatch Contract below)
 
@@ -649,7 +650,7 @@ Run this checklist when generating new row/item controllers or modifying a conta
 - [ ] Every delegate method the row controller implements is in the container's dispatch manifest
 - [ ] If a new delegate method is needed, the container forwarding is added **and** the manifest is updated
 - [ ] Cell reference is released on `didEndDisplaying` / reuse
-- [ ] Async work is cancelled on `didEndDisplaying` / `cancelPrefetchingForRowsAt`
+- [ ] Async work is cancelled on `didEndDisplaying` / `cancelPrefetchingForRowsAt` and at the start of every rebind
 - [ ] Identity uses a stable domain value, not a transient `UUID()`
 - [ ] Dequeued cells: either use local non-optional variable, or force-unwrap with test coverage on the `cellForRowAt` path
 - [ ] The pattern is justified — the list actually has heterogeneous cells or per-row async lifecycle
