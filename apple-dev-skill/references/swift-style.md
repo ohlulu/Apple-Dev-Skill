@@ -69,3 +69,22 @@ generic pass-through functions, where the error set is already closed.
 - Protocols declare `throws` only; errors belong to the concrete type by default
 - When a protocol needs typed throws for a specific reason, the error type may
   live at the protocol level — but treat this as the exception, not the rule
+
+---
+
+## Comments
+
+### Load-Bearing Lines
+A line whose removal still compiles and passes the tests but breaks runtime
+behavior — a forced view load, a layout flush, a statement-order dependency, a
+re-entrancy guard — carries a comment stating what breaks without it, not what
+it does:
+
+```swift
+// Load-bearing: forces the view to load so the transition queue can drain;
+// without it, off-screen instances never report ready.
+_ = self.view
+```
+
+Never delete a line marked load-bearing as redundant without first
+reproducing the failure it guards against.

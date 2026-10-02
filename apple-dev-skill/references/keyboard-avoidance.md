@@ -6,6 +6,15 @@ UIKit does not automatically move content out of the keyboard's way. When a `UIT
 
 This applies to the system keyboard, `inputView` replacements (e.g., `UIDatePicker`), and any `inputAccessoryView`.
 
+## Choose the Mechanism
+
+| Content | Mechanism |
+|---|---|
+| Non-scrolling layout: an input bar or button that sits above the keyboard, a form pinned to the bottom | `view.keyboardLayoutGuide` (iOS 15+): constrain to its `topAnchor`; it animates with the keyboard and needs no observer |
+| Scroll view content | The inset handler below — a layout guide cannot drive `contentInset` or scroll the first responder into view |
+
+`keyboardLayoutGuide` ignores an undocked or floating keyboard by default and drops to the bottom as if the keyboard were offscreen; set `followsUndockedKeyboard = true` when the pinned view should ride along with a floating keyboard.
+
 ## Recommended Approach: Inset the Scroll View
 
 The most reliable pattern is a single handler object that:

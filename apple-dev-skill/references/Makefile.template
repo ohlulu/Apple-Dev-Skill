@@ -69,7 +69,10 @@ CRASH_PATTERN := Restarting after unexpected exit|Crashed:|due to (signal )?(SIG
 
 # Version source (pick one, delete the other)
 # --- xcconfig ---
-VERSION_FILE := $(REPO_ROOT)/App/Configs/{{PROJECT_NAME}}.xcconfig
+# One file that the app AND every extension target #include. Extensions must
+# carry the host's exact version (ITMS-90473 on mismatch); a per-target copy
+# drifts on the first bump. See references/app-extension-targets.md.
+VERSION_FILE := $(REPO_ROOT)/App/Configs/Version.xcconfig
 READ_VERSION  = grep '^MARKETING_VERSION' $(VERSION_FILE) | sed 's/.*= *//'
 SET_VERSION   = sed -i '' 's/^MARKETING_VERSION = .*/MARKETING_VERSION = $(VERSION)/' $(VERSION_FILE)
 READ_BUILD    = grep '^CURRENT_PROJECT_VERSION' $(VERSION_FILE) | sed 's/.*= *//'
@@ -91,6 +94,16 @@ XCODE_DD = $(shell for d in ~/Library/Developer/Xcode/DerivedData/$(basename $(W
 	  [ "$$(/usr/libexec/PlistBuddy -c 'Print :WorkspacePath' "$$d/info.plist" 2>/dev/null)" = "$(REPO_ROOT)/$(WORKSPACE)" ] && echo "$$d" && break; \
 	done)
 
+# Toolchain pin. .xcode-version holds the exact Xcode version the project
+# builds with (e.g. 26.4). A different selected Xcode fails here, instead of
+# later as opaque compile, macro, or signing errors. No file = no check.
+# SKIP_XCODE_CHECK=1 overrides deliberately (evaluating a new Xcode).
+XCODE_CHECK = want=$$(cat $(REPO_ROOT)/.xcode-version 2>/dev/null); \
+	have=$$(xcodebuild -version | awk 'NR==1{print $$2}'); \
+	if [ -n "$$want" ] && [ "$$have" != "$$want" ] && [ -z "$(SKIP_XCODE_CHECK)" ]; then \
+	  echo "❌ Xcode $$have is selected but .xcode-version pins $$want — switch with xcode-select -s, or SKIP_XCODE_CHECK=1"; exit 1; \
+	fi
+
 # ---------------------------------------------------------------------------
 # xc macro — DRY xcodebuild runner
 # ---------------------------------------------------------------------------
@@ -103,7 +116,8 @@ XCODE_DD = $(shell for d in ~/Library/Developer/Xcode/DerivedData/$(basename $(W
 # Exit code alone lies — incremental builds can exit 0 after a compile error,
 # and a crashed test bundle can exit 0 while printing TEST SUCCEEDED.
 define xc
-	@mkdir -p $(LOGDIR); \
+	@$(XCODE_CHECK); \
+	mkdir -p $(LOGDIR); \
 	LOG=$(LOGDIR)/$(1).log; \
 	echo "⏳ xcodebuild $(or $(3),test) [$(2)] … (full log: $$LOG)"; \
 	set -o pipefail; \
@@ -187,6 +201,8 @@ build-release:
 	$(call xc,build-release,$(SCHEME),build,-configuration Release CODE_SIGNING_ALLOWED=NO)
 
 ## Build + install + launch on the pinned simulator (auto-boots it when shut down)
+## CONSOLE=1 blocks and streams the app's stdout/stderr (print()) via a pty;
+## Ctrl-C stops the app. Agents: run it in the background, redirected to a log.
 ## Targets $(SIM_NAME) by explicit UDID — never `booted`, which resolves to
 ## whatever sim happens to be up and can silently reject the install.
 run: build
@@ -203,7 +219,7 @@ run: build
 	  echo "❌ failed to boot '$(SIM_NAME)' ($$UDID)"; exit 1; }; \
 	open -g -a Simulator; \
 	xcrun simctl install "$$UDID" "$$APP" && \
-	xcrun simctl launch "$$UDID" "$$BID"
+	xcrun simctl launch $(if $(CONSOLE),--console-pty) "$$UDID" "$$BID"
 
 # ---------------------------------------------------------------------------
 # Format & warnings

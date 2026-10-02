@@ -123,6 +123,8 @@ When Auto Layout sets this view's frame, its `layoutSubviews` fires and the laye
 - **Frame-dependent properties** (frame, path, shadowPath): set in the **owning view's** `layoutSubviews`.
 - **Never reach down** from a parent's `layoutSubviews` to read a child's bounds for layer sizing.
 
+The other half of the ownership rule — a view never sets its own frame — is in [self-sizing.md](self-sizing.md) → "A View Reports Its Size; Its Parent Places It".
+
 ## Layer Border Draws Above All Sublayers
 
 `layer.borderWidth` / `borderColor` are composited **on top of every sublayer** — and every subview is a sublayer. Any subview that overlaps the border path gets the border line drawn straight through it. Typical victims: a floating "Recommended" pill straddling a card's top edge, a close button hanging off a corner, an avatar overlapping a ring.

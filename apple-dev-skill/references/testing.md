@@ -182,6 +182,19 @@ Host the view under test in a `UIWindow` (`isHidden = false`), never a bare `UIV
 
 Scope honestly: bugs that need production's multi-pass width churn (scroll view + split view + column settling) often do **not** reproduce in a simplified window harness — UIKit's automatic machinery works fine there. This holds even for high-fidelity harnesses: mounting the real view controller in a nav controller at exact production sizes with wide→narrow window resizes still self-heals. Do not burn cycles escalating harness fidelity; treat such frame tests as smoke-level invariants, document the behavioral contract at the fix site, and verify the real screen visually. Always test-the-test: confirm the assertion fails against the pre-fix code before trusting it as regression coverage.
 
+## UI Tests: The App-Side Launch Contract
+
+XCUITest drives the app as a separate process, so isolation is the app's job: the test can only pass a launch argument (`app.launchArguments += ["--ui-testing"]`), and the app must honor it before touching any state. When the app sees the argument, it:
+
+1. **Roots every persistent store in a dedicated location and wipes it before opening any store** — database and files in their own directory, `UserDefaults` in its own suite, Keychain items under a test-only service. Never reuse the production locations: a UI run then reads or corrupts the developer's real data, and results depend on whatever the last session left behind. Wiping after a store has opened leaves the open handle (and an SQLite WAL) on the old data.
+2. **Skips data migrations.** A fresh root has nothing to migrate, and a migration running against a half-wiped store fails for reasons unrelated to the test.
+3. **Points at a test backend or stubs**, never production.
+4. **Compiles the check only in Debug** (`#if DEBUG`), so a release binary cannot be switched into test mode by its launch arguments.
+
+Locate elements by `accessibilityIdentifier`, never by visible label: labels change with localization and copy edits, so a label query fails on any non-English test locale. Consider namespacing identifiers by screen (`Login.Email.Field`, `Login.Submit.Button`) to keep them unique.
+
+When a launch argument triggers setup with no UI (seed an account, reset server state), expose completion as an element with a known identifier and `waitForExistence(timeout:)` on it — the cross-process form of the no-sleep rule in [testing-principles.md](testing-principles.md).
+
 ## Async XCTestCase + Long-Lived Tasks (Xcode 26+)
 
 Xcode 26 / Swift 6 strict concurrency aborts the test bundle in

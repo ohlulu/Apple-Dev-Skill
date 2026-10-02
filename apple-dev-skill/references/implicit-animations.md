@@ -262,6 +262,23 @@ is innocent. Read both `viewDidLoad`s side-by-side and look for:
 The fix is a reorder inside `viewDidLoad`, never a change to the swap
 mechanism.
 
+## Views Created Mid-Update
+
+A view created during an animated update must take its first frame outside the animation; only its entrance (alpha, transform) belongs inside. If its first layout runs inside `UIView.animate`, UIKit records `.zero` as the from-frame and the view flies in from its container's top-left corner — the same capture as Bind-Before-Load, triggered by creation instead of binding.
+
+Prefer creating the view at configure time and toggling `isHidden` (animation.md → Expand / Collapse → Prerequisites). When it must be created lazily inside the update:
+
+```swift
+UIView.performWithoutAnimation {
+    badge.frame = badgeFrame   // final geometry, applied immediately
+    badge.layoutIfNeeded()     // its own subviews resolve now, not inside the animation
+}
+badge.alpha = 0
+UIView.animate(withDuration: 0.1) { badge.alpha = 1 }
+```
+
+This is the source-level form of the rule, not a suppression layer: the view never had a from-state worth animating.
+
 ## Sub-Layer Resolution Artifacts (iOS 26 regression)
 
 On iOS 26.0–26.4 (at least), `UISplitViewController.setViewController
