@@ -74,7 +74,7 @@ Any task that changes what the user sees — new screen, layout change,
 color / spacing / typography tweak, animation adjustment — is done only
 with screenshot evidence, never from code reading:
 
-1. Implement, build, run, and capture a simulator screenshot (axe /
+1. Implement, build, run, and capture a simulator screenshot (sim-use /
    simctl), resized before reading (`sips --resampleWidth 640 <file>`).
 2. Inspect the screenshot against the intent. When a mockup or
    reference screenshot exists, read both side by side and list every

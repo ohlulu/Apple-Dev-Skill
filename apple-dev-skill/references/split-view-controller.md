@@ -326,7 +326,7 @@ The host's default `view.backgroundColor` is `systemBackground` (white in light 
 When you suspect overlay clipping, dump the accessibility frame of detail content and look for **width values that span the whole screen**:
 
 ```bash
-axe describe-ui --udid <UDID>
+axe describe-ui --udid <UDID>   # full tree; sim-use's outline omits the scroll views and cards measured here
 ```
 
 If a card or scroll view inside the detail reports `width: 949` (or whatever ≈ full screen width) instead of `≈ secondary column width`, the detail is anchored to `view.leadingAnchor` instead of the safe-area guide. Frame data is more diagnostic than screenshots here — the screenshot only shows the visible portion, the frame dump reveals the actual extent.
