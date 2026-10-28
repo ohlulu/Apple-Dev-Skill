@@ -25,7 +25,7 @@ The Topic Router in `apple-dev-skill/SKILL.md` is the authoritative list of what
 **Exception**: Suggest separating business logic for testability without enforcing how.
 
 ### 3. No Tool-Driving Instructions
-**Name a tool, never walk through driving it.** Simulator automation, UI verification, and macOS control each have their own skill (`axe`, `maestro`, `peekaboo`, `mcporter`), and duplicating their usage here guarantees two copies that drift.
+**Name a tool, never walk through driving it.** Simulator automation, UI verification, and macOS control each have their own skill (`sim-use`, `maestro`, `peekaboo`, `mcporter`), and duplicating their usage here guarantees two copies that drift.
 
 GUI-only tools — Instruments, the Xcode view debugger, IDE inspectors — cannot be driven headlessly at all. Hand those to the user as a suggestion, the way SKILL.md does for the Core Animation profiler, rather than writing a walkthrough no agent can execute.
 
