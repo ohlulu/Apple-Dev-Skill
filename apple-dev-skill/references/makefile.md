@@ -9,7 +9,7 @@ The Makefile is the single entry point for building, testing, running, and relea
 1. **`help` is the front door** — `.DEFAULT_GOAL := help`; newcomer types `make` and sees every target
 2. **One `xc` macro for all xcodebuild calls** — log capture, result verification, and failure diagnostics live in exactly one place
 3. **Makefile is the menu; scripts/ is the kitchen** — see [Recipe or Script](#recipe-or-script)
-4. **Comments explain WHY** — not what the target name already says
+4. **Comments carry constraints** — an external constraint, a non-obvious failure mode, or a contract with another tool (an exit code a script keys on, a doc to keep in sync), in a sentence or two. Section banners that repeat the `echo` below them, provenance ("modeled on …", commit hashes, dates), and restatements of the code are deleted
 5. **Self-documenting** — `##` comments extracted by `awk` in `help`
 6. **Version management** — `bump VERSION=x.y` and `bump-build`; detect source (shared `Version.xcconfig` vs Project.swift)
 7. **Close Xcode before regeneration** — AppleScript closes only workspaces under this repo's path
@@ -48,25 +48,33 @@ Some projects **cannot** use the simulator: a binary dependency shipping only an
 Pin device model **and** OS version, and derive everything else from them. Without both pinned, xcodebuild picks whichever runtime is available, which drifts between machines and after Xcode updates.
 
 ```makefile
-SIM_NAME := iPad mini (A17 Pro)
-SIM_OS   := 26.4
+-include Makefile.local
+
+SIM_NAME ?= iPad mini (A17 Pro)
+SIM_OS   ?= 26.4
 SIM      := platform=iOS Simulator,name=$(SIM_NAME),OS=$(SIM_OS)
 
-# Resolves the pinned sim's UDID. The awk range scopes the search to the
-# $(SIM_OS) runtime section — a same-named device registered under a different
-# runtime can otherwise win the grep and silently receive the install.
-SIM_UDID_SH := xcrun simctl list devices available | awk '/^-- iOS $(SIM_OS) --/{f=1;next} /^--/{f=0} f' | grep -F '$(SIM_NAME) (' | grep -oE '[0-9A-F-]{36}' | head -1
+SIM_UDID_SH := xcrun simctl list devices available | awk -v n='$(SIM_NAME) (' \
+  '/^-- /{f = ($$0 == "-- iOS $(SIM_OS) --"); next} \
+   f {l = $$0; sub(/^ +/, "", l); if (index(l, n) == 1) {split(substr(l, length(n) + 1), p, ")"); u[++c] = p[1]}} \
+   END {if (c == 1) {print u[1]; exit} \
+        print "❌ simulator \047$(SIM_NAME)\047 (iOS $(SIM_OS)): " (c ? c " match, keep one" : "not found, create it in Xcode > Devices") > "/dev/stderr"; exit 1}'
 ```
 
-Use as `UDID=$$($(SIM_UDID_SH))` inside a recipe; an empty result means the device does not exist.
+`SIM_UDID_SH` prints a UDID only when exactly one device matches; otherwise it exits 1 with the reason on stderr. Three details carry that:
+
+- Scope to the `-- iOS $(SIM_OS) --` section, or a same-named device under another runtime can win.
+- Match the line prefix `<SIM_NAME> (`, not a substring — a substring also matches `My iPad mini (A17 Pro)` and `iPad mini (A17 Pro) L10n`.
+- Count the matches instead of taking `head -1`, which silently picks one of two same-named devices.
+
+Inside `:=`, write `$$0` so awk receives `$0`. Consume it as `UDID=$$($(SIM_UDID_SH)) || exit 1`, and expose it as a `sim-udid` target (`@$(SIM_UDID_SH)`) so tools outside make — a log reader, a UI driver's `--device` — resolve the same simulator.
+
+`?=` plus the gitignored `-include Makefile.local` lets one checkout, typically a git worktree run in parallel, pin its own simulator without touching the tracked file.
 
 **Never target `booted` for install or launch.** It resolves to whichever simulator happens to be up — an iPhone sim booted from another project makes an iPad-only app fail to install, with an error that names the app rather than the device. Resolve the UDID explicitly and boot it yourself:
 
 ```makefile
-	UDID=$$($(SIM_UDID_SH)); \
-	if [ -z "$$UDID" ]; then \
-	  echo "❌ simulator '$(SIM_NAME)' (iOS $(SIM_OS)) not found — create it in Xcode > Devices"; exit 1; \
-	fi; \
+	UDID=$$($(SIM_UDID_SH)) || exit 1; \
 	xcrun simctl bootstatus "$$UDID" -b >/dev/null 2>&1 || { \
 	  echo "❌ failed to boot '$(SIM_NAME)' ($$UDID)"; exit 1; }
 ```
@@ -75,47 +83,53 @@ Use as `UDID=$$($(SIM_UDID_SH))` inside a recipe; an empty result means the devi
 
 When generating a Makefile that pins a simulator, **ask the user which device and OS version to target**. List real options with `xcrun simctl list devices available`.
 
+**Pin an existing simulator by default rather than creating one per checkout.** The alternative — make creates `<App>-<worktree>` on first use, takes the newest runtime when it cannot ask, and offers an orphan cleanup — makes worktrees self-contained, at three costs. A newly created or erased simulator starts from stock state, losing per-device customisation such as a trimmed daemon profile (one iPad mini ran at 975 MB slimmed against 4.49 GB stock). "Newest runtime" changes the OS under the project the day a runtime installs, which is the drift pinning exists to prevent. Orphan cleanup deletes simulators by name. Auto-create fits when worktrees are many and short-lived and no simulator carries per-device state.
+
 ### Physical device selection
 
-A device-based workflow needs a resolved UDID before every build, install, and test. Put the resolution in one sourceable script and give it a fixed precedence:
+A device run needs a resolved UDID before it builds, installs, and launches. Ready-made: [device-udid.sh](device-udid.sh) — copy it to `scripts/` and call it as `DEVICE_TYPE=iPad bash scripts/device-udid.sh`. Stdout carries only the UDID and every message goes to stderr, so `$(make -s device-udid)` composes the way `sim-udid` does.
 
-1. `DEVICE_UDID=<udid>` in the environment — one-off override
-2. A gitignored cache file (`scripts/config`, shell syntax so it can be sourced and hand-edited) — but treat a cached device that is no longer connected as a cache miss
-3. Live probe via `xcrun xctrace list devices`
+**Read devices from `xcrun devicectl list devices --json-output <file>`, never from `xcrun xctrace list devices` text.** `devicectl --help` names the JSON file its only supported machine interface. The text has two traps that no line-shape filter avoids: the range `/== Devices ==/,/== Simulators ==/` also spans `== Devices Offline ==`, and a Mac whose name macOS de-duplicated (`… MacBook Air (2)`) gains a second paren group and passes an `(OS) (UDID)` shape test. With one iPad connected, that filter returned six candidates. Filter the JSON by field:
 
-**A device-selection script must never block on `read` in a non-interactive shell.** Agents and CI run without a TTY; a menu prompt there hangs until timeout with no output explaining why. Gate the prompt on `[ -t 0 ]` and make the non-interactive branch fail loudly with the candidate list and the exact command to pick one:
+- `.hardwareProperties.deviceType` — `iPhone`, `iPad`
+- `.connectionProperties.tunnelState` — `connected`; `disconnected` (paired, reachable on demand); `unavailable`
+- `.hardwareProperties.udid` — the id `xcodebuild -destination id=` and `devicectl --device` take, 25 characters (`00008112-001221100E08C01E`). Not `.identifier`, the CoreDevice id, which differs.
 
-```sh
-if [ "$_count" -eq 1 ]; then
-    UDID=$(_udid_of "$_devices")          # unambiguous — auto-select, no prompt
-elif [ -t 0 ]; then
-    ...                                    # interactive menu
-else
-    echo "❌ Multiple devices detected in a non-interactive environment. Candidates:"
-    printf '%s\n' "$_devices" | sed 's/^/   /'
-    echo "   Pick and save: make device DEVICE_UDID=<UDID>; or one-off: make run DEVICE_UDID=<UDID>"
-    exit 1
-fi
+Keep network-paired devices: one with `transportType` `localNetwork` installs over Wi-Fi.
+
+**Selection fails closed**, because the caller installs onto and terminates an app on whatever device it returns:
+
+1. An explicit `DEVICE_UDID` must name a paired device of the type in state `connected` or `disconnected`, else exit 1 listing the candidates. Never fall through to a probe: a typo, or a pinned device that left, would silently run on a different one.
+2. Without it, exactly one `connected` device auto-selects.
+3. Zero or several exit 1 with the candidate list and the `DEVICE_UDID=<UDID>` that picks one.
+
+Never prompt. A `read` without a TTY hangs agents and CI until timeout, with no output saying why; the failure message with candidates is the menu. When a device should stay pinned, set `DEVICE_UDID := <UDID>` in the gitignored `Makefile.local` — scripts read it and never write it. A cache file the script rewrites is the alternative; a project that keeps one must keep it out of version control, since it holds one machine's devices and churns, and must treat a stale entry as an error rather than re-probe and switch devices.
+
+**Build what you install with `-destination id=<UDID>`; keep `generic/platform=iOS` for the no-device compile check.** Both write `Products/<Config>-iphoneos`, but `id=` turns on `ONLY_ACTIVE_ARCH` and `BUILD_ACTIVE_RESOURCES_ONLY` and adds `TARGET_DEVICE_*` and `ASSETCATALOG_FILTER_FOR_DEVICE_MODEL` — it is what the IDE builds with that device selected.
+
+A UDID resolved in the shell cannot reach the `xc` macro, which single-quotes `-destination '$(…)'`. Resolve and validate in the public target, then re-enter make with the UDID as a make variable — this also rejects a bad device before any build starts:
+
+```makefile
+DEVICE := id=$(DEVICE_UDID)
+
+run-device:
+	@UDID=$$(DEVICE_TYPE='$(DEVICE_TYPE)' DEVICE_UDID='$(DEVICE_UDID)' bash scripts/device-udid.sh) || exit 1; \
+	$(MAKE) --no-print-directory run-device-on DEVICE_UDID=$$UDID
+
+build-device-on:
+	$(call xc,run-device,$(SCHEME),build,-configuration $(CONFIG) -allowProvisioningUpdates,$(DEVICE))
 ```
 
-The same rule applies to any script a Makefile target can reach: **auto-resolve when the answer is unambiguous, prompt only with a TTY, fail with instructions otherwise.**
-
-Filter the device list structurally rather than by name. Every physical iOS device line ends with two parenthesized groups — `(OS version) (UDID)` — while the host Mac has only one, so the shape excludes it without hardcoding anything:
+`run-device-on` (depending on `build-device-on`) then reads the product path from build settings for `$(DEVICE)` and platform `iphoneos` (see [Run Target](#run-target)), and installs and launches with `devicectl`, which needs no third-party tooling:
 
 ```sh
-xcrun xctrace list devices 2>/dev/null \
-    | sed -n '/== Devices ==/,/== Simulators ==/p' \
-    | grep -E '\([^()]+\) \([0-9A-Fa-f-]+\)[[:space:]]*$'
+xcrun devicectl device install app --quiet --device "$UDID" "$APP"
+xcrun devicectl device process launch --quiet --terminate-existing --device "$UDID" "$BID" -- $LAUNCH_ARGS
 ```
 
-Install and launch on device with `devicectl` (Xcode 15+), which needs no third-party tooling:
+App arguments go after `--`; without it devicectl parses an app flag such as `-AppleLanguages` as its own option.
 
-```sh
-xcrun devicectl device install app --device "$UDID" "$APP_PATH"
-xcrun devicectl device process launch --terminate-existing --device "$UDID" "$BUNDLE_ID"
-```
-
-Device builds also need `-allowProvisioningUpdates` so xcodebuild can register the device and refresh the profile instead of failing on a stale one.
+Pass `-allowProvisioningUpdates` on device builds so automatic signing can create or refresh the development profile instead of failing on a stale one. It changes no build setting — `-showBuildSettings` is identical with and without it — so it is safe under the shared-DerivedData flag rule. Registering a device the team has never seen is a separate flag, `-allowProvisioningDeviceRegistration`, which takes effect only alongside it. Once the Mac has Xcode signed in to the team and the device is paired and in Developer Mode, signing needs no TTY (`make run-device </dev/null` signs with the Apple Development identity, no keychain prompt); state those prerequisites in the Makefile for a new machine's first run.
 
 ## DerivedData Strategy
 
@@ -191,6 +205,7 @@ One macro centralizes destination, DerivedData, log handling, and result verific
 
 ```makefile
 # $(1) log-name  $(2) scheme  $(3) action (default: test)  $(4) extra flags
+# $(5) destination (default: $(SIM))
 define xc
 	@mkdir -p $(LOGDIR); \
 	LOG=$(LOGDIR)/$(1).log; \
@@ -199,7 +214,7 @@ define xc
 	xcodebuild \
 	  -workspace $(WORKSPACE) \
 	  -scheme $(2) \
-	  -destination '$(SIM)' \
+	  -destination '$(or $(5),$(SIM))' \
 	  -derivedDataPath "$(DD)" \
 	  -skipMacroValidation \
 	  $(4) \
@@ -217,7 +232,7 @@ define xc
 endef
 ```
 
-Usage: `$(call xc,dingkit,DingKit)` for tests, `$(call xc,build-debug,DingPOS,build,-configuration Debug)` for a build.
+Usage: `$(call xc,dingkit,DingKit)` for tests, `$(call xc,build-debug,DingPOS,build,-configuration Debug)` for a build, and `$(call xc,build-device,DingPOS,build,-configuration Debug -allowProvisioningUpdates,generic/platform=iOS)` for another destination. The destination is a make value inside single quotes, so a UDID resolved in the shell reaches it only through a sub-make (see [Physical device selection](#physical-device-selection)).
 
 ## Parameterised Targets
 
@@ -241,23 +256,19 @@ Always provide a `run` target that builds, installs, and launches in one command
 **Never hardcode the bundle ID or the product path.** Debug builds often append `.debug` to the identifier, and the product directory changes with configuration and platform. Ask xcodebuild for the path, then read the identifier from the built bundle:
 
 ```sh
-APP_PATH=$(xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" \
+SETTINGS=$(xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" \
     -destination "$DESTINATION" -derivedDataPath "$DD" -configuration "$CONFIGURATION" \
-    -showBuildSettings 2>/dev/null | awk -F' = ' '
-  function app() { return t == "com.apple.product-type.application" && p == "iphonesimulator" }
-  /^Build settings for action/ { if (app()) exit; t = p = d = w = "" }
-  /^ *PRODUCT_TYPE = /     { t = $2 }
-  /^ *PLATFORM_NAME = /    { p = $2 }
-  /^ *TARGET_BUILD_DIR = / { d = $2 }
-  /^ *WRAPPER_NAME = /     { w = $2 }
-  END { if (app()) print d "/" w }')
+    -showBuildSettings -json 2>/dev/null)
+APP_PATH=$(printf '%s' "$SETTINGS" | jq -er --arg p iphonesimulator '[.[].buildSettings
+    | select(.PRODUCT_TYPE == "com.apple.product-type.application" and .PLATFORM_NAME == $p)]
+    | select(length == 1) | .[0] | .TARGET_BUILD_DIR + "/" + .WRAPPER_NAME')
 BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Info.plist")
 ```
 
 Two things make this query return the wrong path when done the obvious way:
 
 - **Pass the build's own destination, `-derivedDataPath`, and configuration.** `TARGET_BUILD_DIR` derives from all three, so querying with `generic/platform=iOS` returns the `iphoneos` directory of a simulator build, and omitting `-derivedDataPath` returns the IDE's DerivedData instead of the one the build wrote to.
-- **Select the app's settings block, not the first match.** `-showBuildSettings` prints one block per target in the scheme's build action — frameworks, extensions, an embedded watch app — often before the app. Taking the first `TARGET_BUILD_DIR` / `WRAPPER_NAME` returns whichever target prints first — a `.framework` path the install then rejects. Match `PRODUCT_TYPE` = application *and* `PLATFORM_NAME` = the destination's platform, because a modern watch app is also an application.
+- **Select the app's entry, not the first.** `-showBuildSettings` lists one entry per target in the scheme's build action — frameworks, extensions, an embedded watch app — often before the app, so the first `TARGET_BUILD_DIR` / `WRAPPER_NAME` can be a `.framework` or `.appex` the install rejects. Match `PRODUCT_TYPE` = application *and* `PLATFORM_NAME` = the destination's platform (`iphonesimulator`, `iphoneos`), because a modern watch app is also an application, and require exactly one so a scheme that builds two apps fails by name. `-json` makes the entries structured; parsing the text output needs per-block state to get the same answer.
 
 The bundle identifier comes from the built `Info.plist` rather than `PRODUCT_BUNDLE_IDENTIFIER`: it is what `simctl launch` matches against, and it is unambiguous once the path is.
 
@@ -265,9 +276,23 @@ The bundle identifier comes from the built `Info.plist` rather than `PRODUCT_BUN
 
 Guard the artifact before using it — `[ ! -d "$APP_PATH" ]`. If the build produced nothing at the expected path, reading `Info.plist` fails with a cryptic error that hides the real cause; an explicit check names it.
 
+[Makefile.template](Makefile.template) wraps the query in an `app_settings` macro taking destination and platform, which `run` and `run-device-on` share.
+
+**Per-launch language: `LPROJ=<id>` → `-AppleLanguages "(<id>)"`** after the bundle id (after `--` for devicectl). A launch argument lands in the argument domain, which outranks the app's stored preference for that launch only, so the next plain `run` is back in the configured language and no setting was written. Validate the id against where the strings actually live — the app root's `<id>.lproj`, or `<Package>_<Target>.bundle/<id>.lproj` when an SPM package holds them — and list the available ids on failure; an unknown id otherwise falls back to another language with no error.
+
+**Show the pinned simulator's window:** `open -g -a Simulator --args -CurrentDeviceUDID "$UDID"`. This takes effect when the command launches Simulator; whether it switches windows when Simulator is already running is unverified.
+
 **The build that `run` installs must stay signed** — never pass `CODE_SIGNING_ALLOWED=NO` on it. That flag skips the `CodeSign` build phase, leaving only the ad-hoc signature the linker emits. `codesign -dvvv` tells the two apart: `flags=0x20002(adhoc,linker-signed)` with the flag, `flags=0x2(adhoc)` without it. Simulator securityd rejects every Keychain call from a linker-signed-only binary with `-34018`, so stored credentials read back as nil and new writes fail silently — the app surfaces nothing, and the symptom usually gets misread as an OAuth or session bug. Simulator ad-hoc signing needs no identity or account, so the flag buys nothing here; reserve it for compile-check targets whose product is never installed.
 
 Do not verify this by looking for an `application-identifier` entitlement. Simulator builds carry an empty entitlements dictionary either way — measured across three separate apps — so its absence proves nothing. The real signature is the distinguishing factor; check `codesign -dvvv` flags.
+
+### Landscape-only apps: device vs window orientation
+
+Simulator keeps two rotations per simulator: the device's orientation, which the app sees, and Simulator.app's window rotation, stored in `com.apple.iphonesimulator` under `DevicePreferences.<UDID>.SimulatorWindowOrientation`. Rotation from outside the GUI, such as `sim-use ios rotate`, turns only the device. When the window disagrees, the human watching sees the app sideways or upside down while UI-tree reads and screenshots, which come from the framebuffer, look correct, so an agent never notices.
+
+- The window value names a device orientation: a landscape-right interface needs `LandscapeLeft`.
+- The fix is Device ▸ Orientation ▸ Landscape Left on that simulator's window, which is absolute and sets the device too. The menu acts on the key window and is disabled unless Simulator is the active app, so a script (its own `.applescript`, per [Recipe or Script](#recipe-or-script)) activates Simulator, raises the window whose title starts with `<SIM_NAME>` and ends with `iOS <SIM_OS>`, clicks, and hands focus back.
+- Read the pref first and touch the GUI only when it differs, so a run that is already aligned never steals focus: `defaults export com.apple.iphonesimulator - | plutil -extract "DevicePreferences.$UDID.SimulatorWindowOrientation" raw -o - -`.
 
 ## Warnings Target
 
@@ -377,7 +402,8 @@ help:
 
 ## Adaptation Checklist
 
-- [ ] Target device: simulator (pin name + OS, ask the user) or physical (selection script with cache + non-interactive failure)
+- [ ] Target device: simulator (pin name + OS, ask the user; `Makefile.local` for per-checkout overrides), physical (`device-udid.sh` with `DEVICE_TYPE`, first-run signing prerequisites stated), or both
+- [ ] Landscape-only app: `run` aligns the Simulator window with the device orientation
 - [ ] DerivedData: project-local or shared with IDE — and are the CLI flags consistent with that choice?
 - [ ] Version source: one `Version.xcconfig` every app and extension target includes, or Project.swift
 - [ ] Toolchain pin: `.xcode-version` committed and matching the team's Xcode
