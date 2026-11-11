@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [1.0.0] — 2026-11-11
 
 - **Removed `split-view-controller`'s host-VC wrapper, which re-created the bug class it sat next to.** The reference told a secondary column with animated pushes to wrap its `UINavigationController` in a plain `SecondaryColumnHost` so the push would stay inside the visible pane. A column-style split wraps every non-nav column root in a navigation controller of its own (`UISplitViewController.h`, iOS 26.5 SDK), and that implicit nav's empty bar consumes 54pt of safe area — observed in a shipping app on iPadOS 26.4, where removing the host moved detail content from y=110 to y=56, and re-measured on the iPadOS 26.5 simulator, where adding it back did confine the push but moved the pane from y=56 to y=110. The push itself was overstated: recorded frame by frame on the iPadOS 26.5 simulator with the nav handed straight to the split, the nav's view does span the full width (the incoming background edge sweeps across the strip above the master card), but safe-area-pinned content never entered the master's region and nothing showed through the master card (mean pixel delta ≤ 0.07 inside it). The reference now states the rule — every column root is a navigation controller you built — with the implicit-nav mechanism and what a push actually shows; `ios-26-behavior-changes` and the router row follow.
 

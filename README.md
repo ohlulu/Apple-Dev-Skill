@@ -39,7 +39,7 @@ Three domains unified under a single Topic Router. Reference files load on deman
 | testing-principles | Test levels, async spies, assertion strategy, memory leak tracking |
 | testing | UIKit lifecycle simulation, semantic list helpers, pagination integration tests |
 | uiview-representable | SwiftUI bridging — diff-based updates, coordinator callbacks, pre-rendered bitmaps |
-| *(45 reference files total, including iOS 26 behavior changes, split view, implicit animations, diffable, iCloud/cloud backup)* | |
+| *(49 reference files total, including iOS 26 behavior changes, split view, implicit animations, diffable, iCloud/cloud backup)* | |
 
 ### Xcode / Project Setup
 
@@ -69,14 +69,18 @@ apple-dev-skill/
     alignment.md
     animated-image-playback.md
     animation.md
+    app-extension-targets.md
     associated-objects.md
     autolayout-spacing.md
     build-phases.md
+    card-zoom-transition.md
+    cell-image-loading.md
     cell-registration.md
     cli-distribution-signing.md
     cloud-backup-providers.md
     composer.md
     compound-cell-row-animation.md
+    device-udid.sh
     diffable-data-source.md
     file-structure.md
     icloud-ubiquity.md
@@ -88,6 +92,7 @@ apple-dev-skill/
     list-composition.md
     localizable-strings-escapes.md
     localization-bundle-discovery.md
+    localized-formatting.md
     makefile.md
     Makefile.template
     menu-vs-popover.md
