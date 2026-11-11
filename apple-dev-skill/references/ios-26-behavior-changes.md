@@ -63,16 +63,18 @@ during navigation push transitions.
 `viewController.view.layoutIfNeeded()` after push if a regression
 re-appears.
 
-### Push Transition Slides Across Full Width
+### Push Transition Spans the Full Split Width
 
-**iOS 26.0+** — when the secondary column hosts a
-`UINavigationController`, animated `pushViewController` inside it
-slides the new VC across the *entire* split width and lands at
-`x=0`, hidden under the primary sidebar overlay.
+**iOS 26.0+** — the secondary column's `UINavigationController`
+spans the full split width, so an animated `pushViewController`
+slides views across the whole split. Safe-area-pinned content stays
+in the visible pane; only the push's dimming and background edge
+show above and beside the master card.
 
-**Fix**: wrap the secondary nav in a host VC (`SecondaryColumnHost`)
-that pins it to `safeAreaLayoutGuide.leadingAnchor`. See
-`split-view-controller.md` → "Fix — Host VC Wrapper".
+**Fix**: none needed beyond safe-area pinning. Never wrap the nav in
+a host VC — a non-nav column root gets an implicit nav whose empty
+bar consumes 54pt. See `split-view-controller.md` → "Every Column
+Root Is a Navigation Controller You Built".
 
 ## UISearchController
 
@@ -147,8 +149,8 @@ A codebase that has adopted all the iOS 26 fixes typically carries:
 - a `setViewControllerWithoutAnimation` extension on
   `UISplitViewController` (with the post-swap `layoutIfNeeded` — see
   `split-view-controller.md`)
-- a secondary-column host wrapper VC for animated pushes inside the
-  secondary column
+- split columns whose roots are navigation controllers the composer
+  built and configured (never a plain VC or a host around a nav)
 - `layer.actions = [… NSNull()]` suppression on decorative gradient /
   status layers (see `implicit-animations.md`)
 - detail VCs that call `applyState()` from current VM state in
