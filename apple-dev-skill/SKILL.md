@@ -159,4 +159,4 @@ Family rule: when a reference is a special case of another, both router rows mus
 
 | Topic | Reference |
 |-------|-----------|
-| Swift conventions specific to this codebase — struct memberwise-init trap, phantom types, typed-throws default, private-member placement, MARK rules, error type placement, load-bearing line comments. Baseline Swift practice is assumed, not restated. | [swift-style](references/swift-style.md) |
+| Swift conventions specific to this codebase — struct memberwise-init trap, appearance variants as configuration instead of `enum Style` (presets for reused styles, exposed subviews for local ones), phantom types, typed-throws default, private-member placement, MARK rules, error type placement, load-bearing line comments. Baseline Swift practice is assumed, not restated. | [swift-style](references/swift-style.md) |

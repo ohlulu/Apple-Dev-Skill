@@ -23,6 +23,52 @@ optional encodes states that cannot occur; an enum with associated values makes
 them unrepresentable, so the compiler flags every unhandled case when a variant
 is added later.
 
+### Appearance Variants as Configuration
+
+A view that looks slightly different in different places is a configuration
+problem, not a sum type. An `enum Style` whose cases differ only in colors,
+fonts, or spacing scatters each value across `style == .x ? a : b` branches:
+reading one variant means reading every branch, and adding a variant means
+revisiting every switch. Choose the form by how widely the configuration is
+reused, not by how many values differ:
+
+- **Reused across many call sites, or named by the design system** (the
+  guideline's primary / secondary button, its text styles): a `struct` of the
+  varying values plus named `static` presets, the way `UIButton.Configuration`
+  offers `.filled()` and `.plain()`. The preset is the single point of change
+  when the design system revises the style, so name it with the design
+  system's term, never after the screen that uses it. A variant is written as
+  the preset it starts from plus the values it changes.
+- **Local to one or two call sites**: the component exposes only the subviews
+  whose appearance varies — everything else stays private — and each call site
+  sets them in its factory method. A preset here only adds a hop between the
+  call site and its values, however many values differ.
+- **Cases whose layout or data actually differ** (`.top(inset:)` vs `.center`
+  produce different constraints): keep the enum — exhaustive switching is
+  doing real work, as in Model Variants as Sum Types.
+
+```swift
+final class RankEntryView: UIView {
+    let nicknameLabel = UILabel()   // exposed: varies per call site
+    let countLabel = UILabel()
+
+    private let avatarView = UIImageView()  // identical everywhere: stays private
+}
+
+// Call site owns its variant
+private lazy var entryView = makeEntryView()
+
+private func makeEntryView() -> RankEntryView {
+    let view = RankEntryView()
+    view.nicknameLabel.textColor = .secondaryLabel
+    return view
+}
+```
+
+Existing `enum Style` types count as a project convention (see the Precedence
+Rule in SKILL.md) only when the project's written style guide prescribes them;
+otherwise they are legacy, and new code takes the form above.
+
 ### Phantom Types
 
 Type parameters declared on a generic but never used in stored properties,
