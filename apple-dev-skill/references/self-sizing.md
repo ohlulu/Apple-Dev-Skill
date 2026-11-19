@@ -59,7 +59,10 @@ The view hierarchy doesn't exist in `init`. Measuring requires constraints to be
 
 ### Dynamic Re-sizing
 
-If content changes after presentation (e.g., toggling a discount section), call `updatePreferredContentSize()` again. The presentation controller animates to the new size automatically.
+If content changes after presentation (e.g., toggling a discount section), call `updatePreferredContentSize()` again.
+
+- **A sheet presented inside a `UINavigationController` follows the navigation controller's `preferredContentSize`, not the root's.** The navigation controller derives its size from the root's (plus its bar) but, after the first change, only upward: a root that writes a smaller height leaves the navigation controller, and so the sheet, at the taller height with a gap under the content. Write the size onto the navigation controller as well, every time the root's changes (an `override var preferredContentSize { didSet { … } }` on the root catches external writers too). Write the root's value as is: a size set on the navigation controller is read back with the bar height added. Measured on iOS 18.6 and 26.5.
+- **Do not count on the resize being animated.** On iOS 26.5 an iPad form sheet snaps to a new `preferredContentSize` set outside a presentation transition, so content that changes with it changes in one frame.
 
 ### Trap: Auto-Resize Reading Initializer Constants
 
